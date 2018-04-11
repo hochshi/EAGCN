@@ -3,6 +3,7 @@ import scipy.sparse as sp
 import torch
 import csv
 from rdkit.Chem import MolFromSmiles, SDMolSupplier
+from rdkit.Chem.inchi import MolFromInchi
 from torch.utils.data import Dataset
 from neural_fp import *
 import math
@@ -23,6 +24,8 @@ IntTensor = torch.cuda.IntTensor if use_cuda else torch.IntTensor
 DoubleTensor = torch.cuda.DoubleTensor if use_cuda else torch.DoubleTensor
 
 def load_data(dataset, path = '../data/'):
+    mol_to_graph_transform = None
+    parameter_holder = None
     if dataset == 'tox21':
         x_all, y_all, target, sizes = load_dc_tox21(path=path, keep_nan=True)
     elif dataset == 'hiv':
@@ -31,7 +34,12 @@ def load_data(dataset, path = '../data/'):
         x_all, y_all, target, sizes = load_lipo()
     elif dataset == 'freesolv':
         x_all, y_all, target, sizes = load_freesolv()
-    return(x_all, y_all, target, sizes)
+    elif dataset == 'esol':
+        x_all, y_all, target, sizes = load_esol()
+    elif dataset == 'pubchem_chembl':
+        x_all, y_all, target, sizes, mol_to_graph_transform, parameter_holder = load_pubchem(path=path, keep_nan=False)
+        return (x_all, y_all, target, sizes, mol_to_graph_transform, parameter_holder)
+    return (x_all, y_all, target, sizes)
 
 def load_lipo(path='../data/', dataset = 'Lipophilicity.csv', bondtype_freq = 10,
                     atomtype_freq=10):
@@ -169,6 +177,75 @@ def load_freesolv(path='../data/', dataset = 'SAMPL.csv', bondtype_freq = 3,
 
     return(x_all, labels, target, mol_sizes)
 
+def load_esol(path='../data/', dataset = 'delaney.csv', bondtype_freq = 3,
+                    atomtype_freq=3):
+    print('Loading {} dataset...'.format(dataset))
+    data = []
+    with open('{}{}'.format(path, dataset), 'r') as data_fid:
+        reader = csv.reader(data_fid, delimiter=',', quotechar='"')
+        for row in reader:
+            data.append(row)
+    print('done')
+
+    target = data[0][-2]
+    labels = []
+    mol_sizes = []
+    error_row = []
+    bondtype_dic, atomtype_dic = got_all_Type_solu_dic(dataset)
+
+    sorted_bondtype_dic = sorted(bondtype_dic.items(), key=operator.itemgetter(1))
+    sorted_bondtype_dic.reverse()
+    bondtype_list_order = [ele[0] for ele in sorted_bondtype_dic]
+    bondtype_list_number = [ele[1] for ele in sorted_bondtype_dic]
+
+    filted_bondtype_list_order = []
+    for i in range(0, len(bondtype_list_order)):
+        if bondtype_list_number[i] > bondtype_freq:
+            filted_bondtype_list_order.append(bondtype_list_order[i])
+    filted_bondtype_list_order.append('Others')
+
+    sorted_atom_types_dic = sorted(atomtype_dic.items(), key=operator.itemgetter(1))
+    sorted_atom_types_dic.reverse()
+    atomtype_list_order = [ele[0] for ele in sorted_atom_types_dic]
+    atomtype_list_number = [ele[1] for ele in sorted_atom_types_dic]
+
+    filted_atomtype_list_order = []
+    for i in range(0, len(atomtype_list_order)):
+        if atomtype_list_number[i] > atomtype_freq:
+            filted_atomtype_list_order.append(atomtype_list_order[i])
+    filted_atomtype_list_order.append('Others')
+
+    print('filted_atomtype_list_order: {}, \n filted_bondtype_list_order: {}'.format(filted_atomtype_list_order, filted_bondtype_list_order))
+
+    x_all = []
+    count_1 = 0
+    count_2 = 0
+    for i in range(1, len(data)):
+        mol = MolFromSmiles(data[i][-1])
+        count_1 += 1
+        try:
+            (afm, adj, bft, adjTensor_OrderAtt,
+             adjTensor_AromAtt, adjTensor_ConjAtt, adjTensor_RingAtt) = molToGraph(mol, filted_bondtype_list_order,
+                                         filted_atomtype_list_order).dump_as_matrices_Att()
+            mol_sizes.append(adj.shape[0])
+            labels.append([np.float32(data[i][-2])])
+            x_all.append([afm, adj, bft, adjTensor_OrderAtt, adjTensor_AromAtt, adjTensor_ConjAtt, adjTensor_RingAtt])
+            count_2 +=1
+        except AttributeError:
+            print('the {}th row has an error'.format(i))
+            error_row.append(i)
+        except TypeError:
+            print('the {}th row smile is: {}, can not convert to graph structure'.format(i, data[i][1]))
+            error_row.append(i)
+        except ValueError:
+            print('the {}th row smile is: {}, can not convert to graph structure'.format(i, data[i][-1]))
+        i += 1
+
+    x_all = feature_normalize(x_all)
+    print('Done.')
+
+    return(x_all, labels, target, mol_sizes)
+
 def load_dc_tox21(path='../data/', dataset = 'tox21.csv', bondtype_freq =20, atomtype_freq =10, keep_nan=True):
     print('Loading {} dataset...'.format(dataset))
     data = []
@@ -236,6 +313,8 @@ def load_dc_tox21(path='../data/', dataset = 'tox21.csv', bondtype_freq =20, ato
             print('the {}th row has an error'.format(i))
         except TypeError:
             print('the {}th row smile is: {}, can not convert to graph structure'.format(i, smile))
+        except ValueError as e:
+            print('the {}th row smile is: {}, can not convert to graph structure with error {}'.format(i, smile, str(e)))
         else:
             pass
     x_all = feature_normalize(x_all)
@@ -314,6 +393,159 @@ def load_hiv(path='../data/', dataset = 'HIV.csv', bondtype_freq =20, atomtype_f
     print('Done.')
     return (x_all, y_all, target, mol_sizes)
 
+class ParameterHolder(object):
+
+    def __init__(self, n_bfeat):
+        self.n_bfeat = n_bfeat
+
+class MolGraph(object):
+    """
+    Transform a molecule (smiles or InChi) to a graph
+    """
+
+    def __init__(self, text_to_mol_func, atomtype_list_order, bondtype_list_order, afnorm):
+        self.text_to_mol_func = text_to_mol_func
+        self.atomtype_list_order = atomtype_list_order
+        self.bondtype_list_order = bondtype_list_order
+        self.afnorm = afnorm
+
+    def __call__(self, sample):
+        mol = self.text_to_mol_func(sample)
+        (afm, adj, bft, orderAtt, aromAtt, conjAtt, ringAtt) = \
+            molToGraph(mol, self.bondtype_list_order, self.atomtype_list_order, molecular_attributes=True)\
+                .dump_as_matrices_Att()
+        # This is the order in which the features are returned by the dataset see class MolDataset(Dataset)
+        # return (adj, afm, bft, orderAtt, aromAtt, conjAtt, ringAtt, label)
+        #(adj, afm, btf, orderAtt, aromAtt, conjAtt, ringAtt, labels)
+        return (adj, self.afnorm(afm), bft, orderAtt, aromAtt, conjAtt, ringAtt)
+
+
+class AtomFeatureNormalizer(object):
+    """Min Max Feature Scalling for Atom Feature Matrix"""
+
+    def __init__(self, feature_num):
+        self.feature_num = feature_num
+        self.feature_min_dic = {}
+        self.feature_max_dic = {}
+
+    def update_min_max(self, afm):
+        afm_min = afm.min(0)
+        afm_max = afm.max(0)
+        for j in range(self.feature_num):
+            if j not in self.feature_max_dic.keys():
+                self.feature_max_dic[j] = afm_max[j]
+                self.feature_min_dic[j] = afm_min[j]
+            else:
+                if self.feature_max_dic[j] < afm_max[j]:
+                    self.feature_max_dic[j] = afm_max[j]
+                if self.feature_min_dic[j] > afm_min[j]:
+                    self.feature_min_dic[j] = afm_min[j]
+
+    def __call__(self, afm):
+        feature_diff_dic = {}
+        for j in range(self.feature_num):
+            feature_diff_dic[j] = self.feature_max_dic[j] - self.feature_min_dic[j]
+            if feature_diff_dic[j] == 0:
+                feature_diff_dic[j] = 1
+            afm[:, j] = (afm[:, j] - self.feature_min_dic[j]) / (feature_diff_dic[j])
+        return afm
+
+
+def load_pubchem(path='../data/', dataset = 'small_batch_test.csv', bondtype_freq =20, atomtype_freq =10, keep_nan=True): # dataset = 'pubchem_chembl_bestmapping.csv'
+    print('Loading {} dataset...'.format(dataset))
+    try:
+        with open('{}{}{}'.format(path, dataset,'.npz'), 'r') as data_fid:
+            loaded_data = np.load(data_fid)
+            print('Done.')
+            return (loaded_data['x_all'], loaded_data['y_all'], loaded_data['target'], loaded_data['mol_sizes'], loaded_data['mol_to_graph_transform'][0], loaded_data['parameter_holder'][0])
+    except IOError:
+        print('Failed Loading pickled {} dataset...'.format(dataset))
+
+    data = []
+    with open('{}{}'.format(path, dataset), 'r') as data_fid:
+        reader = csv.reader(data_fid, delimiter=',', quotechar='"')
+        for row in reader:
+            data.append(row)
+
+    label_name = data[0][0:-1]
+    target = label_name
+
+    bondtype_dic, atomtype_dic = got_all_Type_solu_dic(dataset)
+
+    sorted_bondtype_dic = sorted(bondtype_dic.items(), key=operator.itemgetter(1))
+    sorted_bondtype_dic.reverse()
+    bondtype_list_order = [ele[0] for ele in sorted_bondtype_dic]
+    bondtype_list_number = [ele[1] for ele in sorted_bondtype_dic]
+
+    filted_bondtype_list_order = []
+    for i in range(0, len(bondtype_list_order)):
+        if bondtype_list_number[i] > bondtype_freq:
+            filted_bondtype_list_order.append(bondtype_list_order[i])
+    filted_bondtype_list_order.append('Others')
+
+    sorted_atom_types_dic = sorted(atomtype_dic.items(), key=operator.itemgetter(1))
+    sorted_atom_types_dic.reverse()
+    atomtype_list_order = [ele[0] for ele in sorted_atom_types_dic]
+    atomtype_list_number = [ele[1] for ele in sorted_atom_types_dic]
+
+    filted_atomtype_list_order = []
+    for i in range(0, len(atomtype_list_order)):
+        if atomtype_list_number[i] > atomtype_freq:
+            filted_atomtype_list_order.append(atomtype_list_order[i])
+    filted_atomtype_list_order.append('Others')
+
+    print('filted_atomtype_list_order: {}, \n filted_bondtype_list_order: {}'.format(filted_atomtype_list_order, filted_bondtype_list_order))
+
+    #TODO: transfer this part to data transform code
+    # mol to graph
+    i = 0
+    mol_sizes = []
+    x_all = []
+    y_all = []
+    afnorm = None
+    parameter_holder = None
+    print('Transfer mol to matrices')
+    for row in data[1:]:
+        i+=1
+        if len(row) ==0:
+            continue
+        inchi = row[-1]
+        label = row[0:-1]
+        label = ['nan' if ele=='' else ele for ele in label]
+        num_label = [float(x) for x in label]
+        num_label = [0 if math.isnan(x) else x for x in num_label]
+        try:
+            mol = MolFromInchi(inchi)
+            (afm, adj, bft, adjTensor_OrderAtt,
+             adjTensor_AromAtt, adjTensor_ConjAtt, adjTensor_RingAtt) = molToGraph(mol, filted_bondtype_list_order,
+                                                                                   filted_atomtype_list_order,
+                                                                                   molecular_attributes=True).dump_as_matrices_Att()
+            # x_all.append([afm, adj, bft, adjTensor_OrderAtt, adjTensor_AromAtt, adjTensor_ConjAtt, adjTensor_RingAtt])
+            # We dont save the matrices - only the smiles. Transforming all mols takes too much memory
+            # Hopefully we can pickle MolGraph and AtomFeatureNormalizer then we can skip this step
+            x_all.append(inchi)
+            if afnorm is None:
+                afnorm = AtomFeatureNormalizer(afm.shape[1])
+            if parameter_holder is None:
+                parameter_holder = ParameterHolder(bft.shape[0])
+            afnorm.update_min_max(afm)
+            y_all.append(num_label)
+            mol_sizes.append(adj.shape[0])
+            # feature matrices of mols, include Adj Matrix, Atom Feature, Bond Feature.
+        except AttributeError:
+            print('the {}th row has an error'.format(i))
+        except ValueError:
+            print('the {}th row smile is: {}, can not convert to graph structure'.format(i, inchi))
+        else:
+            pass
+    # No need to normalize the features - this is done when iterating over the datase
+    # x_all = feature_normalize(x_all)
+    print('Done.')
+    mol_to_graph_transform = MolGraph(MolFromInchi, filted_atomtype_list_order, filted_bondtype_list_order, afnorm)
+    with open('{}{}{}'.format(path, dataset, '.npz'), 'w') as data_fid:
+        np.savez(data_fid, x_all=x_all, y_all=y_all, target=target, mol_sizes=mol_sizes, mol_to_graph_transform=[mol_to_graph_transform], parameter_holder=[parameter_holder])
+    return (x_all, y_all, target, mol_sizes, mol_to_graph_transform, parameter_holder)
+
 def data_filter(x_all, y_all, target, sizes, tasks, size_cutoff=1000):
     idx_row = []
     for i in range(0, len(sizes)):
@@ -371,6 +603,47 @@ def feature_normalize(x_all):
             afm[:,j] = (afm[:,j] - feature_min_dic[j])/(feature_diff_dic[j])
         x_all[i][0] = afm
     return x_all
+
+class MolEntry():
+    """
+        Class that represents a train/validation/test entry as smiles/inchi, label
+        - self.label: 0 neg, 1 pos -1 missing for different target.
+    """
+
+    def __init__(self, mol_text, label):
+        self.mol_text = mol_text
+        self.label = label
+
+def construct_pubchem_dataset(x_all, y_all):
+    output = []
+    for i in range(len(x_all)):
+        output.append(MolEntry(x_all[i], y_all[i]))
+    return(output)
+
+
+class PubchemMolDataset(Dataset):
+    """
+    Class that represents a train/validation/test dataset that's readable for PyTorch
+    Note that this class inherits torch.utils.data.Dataset
+    """
+
+    def __init__(self, data_list, transform):
+        # type: (list, MolGraph) -> None
+        self.data_list = data_list
+        self.transfom = transform
+
+    def __len__(self):
+        # type: () -> int
+        return len(self.data_list)
+
+    def __getitem__(self, key):
+        # type: (int) -> tuple
+        """
+        Triggered when you call dataset[i]
+        """
+        adj, afm, bft, orderAtt, aromAtt, conjAtt, ringAtt  = self.transfom(self.data_list[key].mol_text)
+        label = self.data_list[key].label
+        return (adj, afm, bft, orderAtt, aromAtt, conjAtt, ringAtt, label)
 
 class MolDatum():
     """
@@ -493,12 +766,15 @@ def mol_collate_func_class(batch):
         size_list.append(datum[0].shape[0])
     max_size = np.max(size_list) # max of batch    222 for hiv, 132 for tox21,
     btf_len = datum[2].shape[0]
+    atf_len = datum[1].shape[1]
     #max_size = max_molsize #max_molsize 132
     # padding
     for datum in batch:
         filled_adj = np.zeros((max_size, max_size), dtype=np.float32)
         filled_adj[0:datum[0].shape[0], 0:datum[0].shape[0]] = datum[0]
-        filled_afm = np.zeros((max_size, 25), dtype=np.float32)
+        # filled_afm = np.zeros((max_size, 25), dtype=np.float32)
+        # Originally the number of atom features is set at 25
+        filled_afm = np.zeros((max_size, atf_len), dtype=np.float32)
         filled_afm[0:datum[0].shape[0], :] = datum[1]
         filled_bft = np.zeros((btf_len, max_size, max_size), dtype=np.float32)
         filled_bft[:, 0:datum[0].shape[0], 0:datum[0].shape[0]] = datum[2]
@@ -689,6 +965,7 @@ def got_all_atomType_tox21_dic(dataset, path='../data/'):
     return(atomtype_dic)
 
 def got_all_Type_solu_dic(dataset, path='../data/'):
+    MolFromTextFunc = MolFromSmiles
     if dataset == 'Lipophilicity.csv':
         delimiter = ','
         quotechar = '"'
@@ -704,11 +981,28 @@ def got_all_Type_solu_dic(dataset, path='../data/'):
         quotechar = '"'
         smile_idx = 1
         len_data = 643
+    elif dataset == 'delaney.csv':
+        delimiter = ','
+        quotechar = '"'
+        smile_idx = -1
+        len_data = 1129
     elif dataset == 'tox21.csv':
         delimiter = ','
         quotechar = '"'
         smile_idx = 13
         len_data = 7832
+    elif dataset == 'pubchem_chembl_bestmapping.csv':
+        MolFromTextFunc = MolFromInchi
+        delimiter = ','
+        quotechar = '"'
+        smile_idx = -1
+        len_data = 578746
+    elif dataset == 'small_batch_test.csv':
+        MolFromTextFunc = MolFromInchi
+        delimiter = ','
+        quotechar = '"'
+        smile_idx = -1
+        len_data = 28870
 
     data = []
     with open('{}{}'.format(path, dataset), 'r') as data_fid:
@@ -723,7 +1017,7 @@ def got_all_Type_solu_dic(dataset, path='../data/'):
             continue
         smile = row[smile_idx]
         try:
-            mol = MolFromSmiles(smile)
+            mol = MolFromTextFunc(smile)
             bondtype_dic = fillBondType_dic(mol, bondtype_dic)
             atomtype_dic = fillAtomType_dic(mol, atomtype_dic)
         except AttributeError:
@@ -753,6 +1047,15 @@ def construct_loader(x, y, target, batch_size, shuffle=True):
                                                batch_size=batch_size,
                                                collate_fn=mol_collate_func_class,
                                                shuffle=shuffle)
+    return loader
+
+def construct_pubchem_loader(x, y, batch_size, transform, shuffle=True):
+    data_set = construct_pubchem_dataset(x, y)
+    data_set = PubchemMolDataset(data_set, transform)
+    loader = torch.utils.data.DataLoader(dataset=data_set,
+                                               batch_size=batch_size,
+                                               collate_fn=mol_collate_func_class,
+                                               shuffle=shuffle, num_workers=3)
     return loader
 
 def construct_loader_reg(x, y, target, batch_size, shuffle=True):

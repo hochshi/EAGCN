@@ -21,7 +21,7 @@ import os
 
 from time import gmtime, strftime
 
-dataset = 'freesolv' # 'lipo', 'freesolv'
+dataset = 'esol' # 'lipo', 'freesolv', 'esol'
 
 # Training settings
 early_stop_step = 6
@@ -49,6 +49,17 @@ elif dataset == 'freesolv':
     learning_rate = 0.001
     dropout = 0.3
     weight_decay = 0.0001
+elif dataset == 'esol':
+    n_sgc1_1, n_sgc1_2, n_sgc1_3, n_sgc1_4, n_sgc1_5 = 30, 10, 5, 5, 5
+    n_sgc2_1, n_sgc2_2, n_sgc2_3, n_sgc2_4, n_sgc2_5 = 30, 10, 5, 5, 5
+    n_den1, n_den2, n_den3 = 32, 12, 12
+    early_stop_val_rmse = 0.40
+    random_state = 2
+    num_epochs = 1000
+    learning_rate = 0.001
+    dropout = 0.3
+    weight_decay = 0.0001
+
 
 use_cuda = torch.cuda.is_available()
 FloatTensor = torch.cuda.FloatTensor if use_cuda else torch.FloatTensor
@@ -188,3 +199,5 @@ with open(file_name, 'a') as fp:
 torch.save(model.state_dict(), '{}.pkl'.format(file_name))
 torch.save(model, '{}.pt'.format(file_name))
 #model = torch.load('filename.pt')
+# def count_parameters(model):
+#     return sum(p.numel() for p in model.parameters() if p.requires_grad)
