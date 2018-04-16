@@ -12,6 +12,112 @@ IntTensor = torch.cuda.IntTensor if use_cuda else torch.IntTensor
 DoubleTensor = torch.cuda.DoubleTensor if use_cuda else torch.DoubleTensor
 
 
+class Shi_GCN(nn.Module):
+
+    def __init__(self, n_bfeat, n_afeat, n_sgc1_1, n_sgc1_2, n_sgc1_3, n_sgc1_4, n_sgc1_5,
+                 n_sgc2_1, n_sgc2_2, n_sgc2_3, n_sgc2_4, n_sgc2_5,
+                 n_den1, n_den2,
+                 nclass, dropout, use_att = True, molfp_mode = 'sum', hidden_size=50, radius=1):
+        super(Shi_GCN, self).__init__()
+
+        self.ngc1 = n_sgc1_1 + n_sgc1_2 + n_sgc1_3 + n_sgc1_4 + n_sgc1_5
+        ngc1 = self.ngc1
+        self.ngc2 = n_sgc2_1 + n_sgc2_2 + n_sgc2_3 + n_sgc2_4 + n_sgc2_5
+        ngc2 = self.ngc2
+        self.hidden_size = ngc1
+        hidden_size = self.hidden_size
+        self.radius = radius+1
+
+        # TODO: Fix this - this is A one dimension Conv
+        # self.conv0 = nn.Conv2d(n_afeat, ngc1)
+        # self.bn0 = AFM_BatchNorm(ngc1)
+
+        self.i2h = nn.Linear(ngc1 + hidden_size, hidden_size)
+        self.i2o = nn.Linear(ngc1 + hidden_size, ngc1)
+
+        self.bn = nn.BatchNorm1d(ngc1)
+        self.bnfp = nn.BatchNorm1d(2*ngc1)
+        self.soft = nn.Softmax(dim=1)
+
+        self.att0 = nn.Conv2d(n_afeat + n_bfeat + 5 + 3 + 3 + 3, ngc1, kernel_size=1, stride=1, padding=0, dilation=1,
+                              groups=1, bias=True)
+
+        self.att1 = nn.Conv2d(n_afeat + n_bfeat + 5 + 3 + 3 + 3, ngc1, kernel_size=1, stride=1, padding=0, dilation=1, groups=1, bias=True)
+
+        self.den1 = Dense(2*self.ngc1, n_den1)
+        self.den2 = Dense(n_den1, n_den2)
+        self.den3 = Dense(n_den2, nclass)
+        self.bn_den1 = nn.BatchNorm1d(n_den1)
+        self.bn_den2 = nn.BatchNorm1d(n_den2)
+        self.dropout = dropout
+        self.use_att = use_att
+
+    def init_hidden(self):
+        return Variable(torch.zeros(1, self.hidden_size))
+
+    def rnn_forward(self, input, hidden):
+        combined = torch.cat((input, hidden), 1)
+        hidden = self.i2h(combined)
+        output = self.i2o(combined)
+        return output, hidden
+
+    def forward(self, adjs, afms, bfts, OrderAtt, AromAtt, ConjAtt, RingAtt):  # bfts
+        adjs_no_diag = torch.clamp(adjs - Variable(torch.eye(adjs.size()[1]).float()), min=0)
+
+        adjs_diag = adjs - adjs_no_diag
+        adjs_afms = torch.mul(adjs_diag.unsqueeze(3).expand(-1, -1, -1, afms.size()[2]), afms.unsqueeze(1)).permute(
+            0, 3, 1, 2)
+        adjs_att = torch.cat((adjs_afms, bfts, OrderAtt, AromAtt, ConjAtt, RingAtt), dim=1)
+        att = self.soft(self.att0(adjs_att))
+        att = torch.sum(att, dim=3)
+        fp0 = torch.sum(torch.bmm(att, afms), dim=2)
+        fp0, hidden = self.rnn_forward(fp0, self.init_hidden().expand(fp0.size()[0], -1))
+
+        fp0 = F.dropout(F.relu(self.bn(fp0)), p=self.dropout, training=self.training)
+
+        # adjs_afms = torch.mul(adjs_diag.unsqueeze(3).expand(-1, -1, -1, afms.size()[2]), afms.unsqueeze(1)).permute(
+        #     0, 3, 1, 2)
+        # adjs_att = torch.cat((torch.mul(adjs_diag.unsqueeze(3).expand(-1, -1, -1, afms.size()[2]), afms.unsqueeze(1)).permute(
+        #     0, 3, 1, 2), bfts, OrderAtt, AromAtt, ConjAtt, RingAtt), dim=1)
+        # att = self.soft(self.att0(torch.cat((torch.mul(adjs_diag.unsqueeze(3).expand(-1, -1, -1, afms.size()[2]), afms.unsqueeze(1)).permute(
+        #     0, 3, 1, 2), bfts, OrderAtt, AromAtt, ConjAtt, RingAtt), dim=1)))
+        # att = torch.sum(self.soft(self.att0(torch.cat((torch.mul(adjs_diag.unsqueeze(3).expand(-1, -1, -1, afms.size()[2]), afms.unsqueeze(1)).permute(
+        #     0, 3, 1, 2), bfts, OrderAtt, AromAtt, ConjAtt, RingAtt), dim=1))), dim=3)
+        # fp0 = torch.sum(torch.bmm(torch.sum(self.soft(self.att0(torch.cat((torch.mul(adjs_diag.unsqueeze(3).expand(-1, -1, -1, afms.size()[2]), afms.unsqueeze(1)).permute(
+        #     0, 3, 1, 2), bfts, OrderAtt, AromAtt, ConjAtt, RingAtt), dim=1))), dim=3), afms), dim=2)
+        # fp0, hidden = self.rnn_forward(torch.sum(torch.bmm(torch.sum(self.soft(self.att0(torch.cat((torch.mul(adjs_diag.unsqueeze(3).expand(-1, -1, -1, afms.size()[2]), afms.unsqueeze(1)).permute(
+        #     0, 3, 1, 2), bfts, OrderAtt, AromAtt, ConjAtt, RingAtt), dim=1))), dim=3), afms), dim=2), self.init_hidden().expand(afms.size()[0], -1))
+        # fp0 = F.dropout(F.relu(self.bn(fp0)), p=self.dropout, training=self.training)
+
+
+        adjs_no_diag = torch.clamp(adjs - Variable(torch.eye(adjs.size()[1]).float()), min=0)
+        adjs_afms = torch.mul(adjs_no_diag.unsqueeze(3).expand(-1, -1, -1, afms.size()[2]), afms.unsqueeze(1)).permute(0, 3, 1, 2)
+        adjs_att = torch.cat((adjs_afms, bfts, OrderAtt, AromAtt, ConjAtt, RingAtt), dim=1)
+        att = self.soft(self.att1(adjs_att))
+        att = torch.sum(att, dim=3)
+        fp1 = torch.sum(torch.bmm(att, afms), dim=2)
+        fp1, hidden = self.rnn_forward(fp1, hidden)
+        fp1 = F.dropout(F.relu(self.bn(fp1)), p=self.dropout, training=self.training)
+
+        # fp1, hidden = self.rnn_forward(torch.sum(torch.bmm(torch.sum(self.soft(self.att0(
+        #     torch.cat((torch.mul(adjs_no_diag.unsqueeze(3).expand(-1, -1, -1, afms.size()[2]), afms.unsqueeze(1)).permute(
+        #         0, 3, 1, 2), bfts, OrderAtt, AromAtt, ConjAtt, RingAtt), dim=1))), dim=3), afms), dim=2),
+        #     self.init_hidden().expand(afms.size()[0], -1))
+        # fp1 = F.dropout(F.relu(self.bn(fp1)), p=self.dropout, training=self.training)
+
+        # fp = self.bn(torch.cat((fp0, fp1), dim=1))
+
+        fp = torch.cat((fp0, fp1), dim=1)
+
+        x = self.den1(fp)
+        x = F.relu(self.bn_den1(x))
+        x = F.dropout(x, p=self.dropout, training=self.training)
+        x = self.den2(x)
+        x = F.relu(self.bn_den2(x))
+        x = self.den3(x)
+        return x
+
+
 class Concate_GCN(nn.Module):
     """
     @ The model used to train concatenate structure model

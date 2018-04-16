@@ -38,8 +38,7 @@ def load_data(dataset, path = '../data/'):
         x_all, y_all, target, sizes = load_esol()
     elif dataset == 'pubchem_chembl':
         x_all, y_all, target, sizes, mol_to_graph_transform, parameter_holder = load_pubchem(path=path, keep_nan=False)
-        return (x_all, y_all, target, sizes, mol_to_graph_transform, parameter_holder)
-    return (x_all, y_all, target, sizes)
+    return (x_all, y_all, target, sizes, mol_to_graph_transform, parameter_holder)
 
 def load_lipo(path='../data/', dataset = 'Lipophilicity.csv', bondtype_freq = 10,
                     atomtype_freq=10):
