@@ -18,8 +18,8 @@ class Shi_GCN(nn.Module):
     def __init__(self, n_bfeat, n_afeat, n_sgc1_1, n_sgc1_2, n_sgc1_3, n_sgc1_4, n_sgc1_5,
                  n_sgc2_1, n_sgc2_2, n_sgc2_3, n_sgc2_4, n_sgc2_5,
                  n_den1, n_den2,
-                 nclass, dropout, edge_vocab, node_vocab, use_att = True, molfp_mode = 'sum', hidden_size=50, radius=4,
-                 edge_embedding_dim = 15, node_embedding_dim = 15):
+                 nclass, dropout, edge_vocab, node_vocab, use_att = True, molfp_mode = 'sum', hidden_size=50, radius=2,
+                 edge_embedding_dim = 10, node_embedding_dim = 10):
         super(Shi_GCN, self).__init__()
 
         self.ngc1 = n_sgc1_1 + n_sgc1_2 + n_sgc1_3 + n_sgc1_4 + n_sgc1_5
@@ -45,11 +45,11 @@ class Shi_GCN(nn.Module):
         self.bn = {}
 
         for rad in range(self.radius):
-            setattr(self, '_'.join(('conv', 'self', str(rad))),
-                    nn.Conv1d(self.node_attr_len, self.node_attr_len, kernel_size=1,
-                              stride=1, padding=0, dilation=1, groups=1,
-                              bias=True))
-            self.conv[('self', rad)] = getattr(self, '_'.join(('conv', 'self', str(rad))))
+            # setattr(self, '_'.join(('conv', 'self', str(rad))),
+            #         nn.Conv1d(self.node_attr_len, self.node_attr_len, kernel_size=1,
+            #                   stride=1, padding=0, dilation=1, groups=1,
+            #                   bias=True))
+            # self.conv[('self', rad)] = getattr(self, '_'.join(('conv', 'self', str(rad))))
 
             setattr(self, '_'.join(('conv', 'out', str(rad))), nn.Conv1d(self.node_attr_len, ngc1, kernel_size=1,
                                                                          stride=1, padding=0, dilation=1,
@@ -63,43 +63,24 @@ class Shi_GCN(nn.Module):
                                                                               padding=0, dilation=1, groups=1, bias=True))
             self.conv[('neighbor', rad)] = getattr(self, '_'.join(('conv', 'neighbor', str(rad))))
 
-            setattr(self, '_'.join(('conv', 'edge', str(rad))), nn.Conv2d(self.edge_embed_len, self.edge_embed_len,
-                                                                          kernel_size=1, stride=1, padding=0,
-                                                                          dilation=1,
-                                                                          groups=1, bias=True))
-            self.conv[('edge', rad)] = getattr(self, '_'.join(('conv', 'edge', str(rad))))
+            # setattr(self, '_'.join(('conv', 'edge', str(rad))), nn.Conv2d(self.edge_embed_len, self.edge_embed_len,
+            #                                                               kernel_size=1, stride=1, padding=0,
+            #                                                               dilation=1,
+            #                                                               groups=1, bias=True))
+            # self.conv[('edge', rad)] = getattr(self, '_'.join(('conv', 'edge', str(rad))))
 
             setattr(self, '_'.join(('bn', str(rad))), nn.BatchNorm1d(self.node_attr_len))
             self.bn[rad] = getattr(self, '_'.join(('bn', str(rad))))
 
-        self.dense = nn.Linear(ngc1, nclass)
+        if 'sum' == molfp_mode:
+            self.fp_func = sum
+            self.dense = nn.Linear(ngc1, nclass)
+        else:
+            self.fp_func = lambda x: torch.cat(x, dim=1)
+            self.dense = nn.Linear(self.radius*ngc1, nclass)
 
         self.out_softmax = nn.Softmax(dim=1)
         self.dropout = dropout
-
-        # TODO: Fix this - this is A one dimension Conv
-        # self.conv0 = nn.Conv2d(n_afeat, ngc1)
-        # self.bn0 = AFM_BatchNorm(ngc1)
-
-        # self.i2h = nn.Linear(ngc1 + hidden_size, hidden_size)
-        # self.i2o = nn.Linear(ngc1 + hidden_size, ngc1)
-        #
-        # self.bn = nn.BatchNorm1d(ngc1)
-        # self.bnfp = nn.BatchNorm1d(2*ngc1)
-        # self.soft = nn.Softmax(dim=1)
-        #
-        # self.att0 = nn.Conv2d(n_afeat + n_bfeat + 5 + 3 + 3 + 3, ngc1, kernel_size=1, stride=1, padding=0, dilation=1,
-        #                       groups=1, bias=True)
-        #
-        # self.att1 = nn.Conv2d(n_afeat + n_bfeat + 5 + 3 + 3 + 3, ngc1, kernel_size=1, stride=1, padding=0, dilation=1, groups=1, bias=True)
-        #
-        # self.den1 = Dense(2*self.ngc1, n_den1)
-        # self.den2 = Dense(n_den1, n_den2)
-        # self.den3 = Dense(n_den2, nclass)
-        # self.bn_den1 = nn.BatchNorm1d(n_den1)
-        # self.bn_den2 = nn.BatchNorm1d(n_den2)
-
-        # self.use_att = use_att
 
     def embed_edges(self, adjs, OrderAtt, AromAtt, ConjAtt, RingAtt):
         edge_data = torch.cat((OrderAtt, AromAtt, ConjAtt, RingAtt), dim=1).permute((0, 2, 3, 1))
@@ -128,7 +109,7 @@ class Shi_GCN(nn.Module):
     def get_self(self, nz, node_data, layer):
         return (
             self.get_self_out(nz, node_data, self.conv[('out', layer)]),
-            self.get_self_act(nz, node_data, self.conv[('self', layer)])
+            node_data # self.get_self_act(nz, node_data, self.conv[('self', layer)])
         )
 
     def get_self_out(self, nz, node_data, conv):
@@ -142,14 +123,21 @@ class Shi_GCN(nn.Module):
         layer = torch.mul(layer, nz.unsqueeze(1).expand(-1, self.node_attr_len, -1))
         return layer # torch.sum(layer, dim=2)
 
-    def get_neighbor_act(self, adjs_no_diag, node_data, edge_data, layer):
-        lna = torch.mul(adjs_no_diag.unsqueeze(1).expand(-1, self.node_attr_len, -1, -1), node_data.unsqueeze(3))
-        lnb = torch.mul(adjs_no_diag.unsqueeze(1).expand((-1, self.edge_embed_len, -1, -1)), edge_data)
+    def get_neighbor_act(self, adj_mat, node_data, edge_data, layer):
+        lna = torch.mul(adj_mat.unsqueeze(1).expand(-1, self.node_attr_len, -1, -1), node_data.unsqueeze(3))
+        lnb = torch.mul(adj_mat.unsqueeze(1).expand((-1, self.edge_embed_len, -1, -1)), edge_data)
         ln = torch.cat((lna, lnb), dim=1)
         ln = self.conv[('neighbor', layer)](ln)
-        ln = torch.mul(adjs_no_diag.unsqueeze(1).expand((-1, self.node_attr_len, -1, -1)), ln)
+        ln = torch.mul(adj_mat.unsqueeze(1).expand((-1, self.node_attr_len, -1, -1)), ln)
         ln = ln.sum(dim=3)
         return ln
+
+    def next_radius_adj_mat(self, adj_mat, adj_mats):
+        next_adj_mat = torch.bmm(adj_mat, adj_mats[0])
+        next_adj_mat[next_adj_mat!=0] = 1
+        next_adj_mat = next_adj_mat - sum(adj_mats)
+        next_adj_mat = torch.clamp(next_adj_mat - Variable(torch.eye(next_adj_mat.size()[1]).float()*next_adj_mat.size()[1]), min=0)
+        return next_adj_mat
 
     def forward(self, adjs, afms, bfts, OrderAtt, AromAtt, ConjAtt, RingAtt):  # bfts
         edge_data = self.embed_edges(adjs, OrderAtt, AromAtt, ConjAtt, RingAtt)
@@ -164,14 +152,21 @@ class Shi_GCN(nn.Module):
         node_current = node_data
         neighbor_current = torch.zeros_like(node_data)
         edge_current = edge_data
+        adj_mat = adjs_no_diag
+        adj_mats = []
 
         #TODO: Should we create edge_next for next iteration?
 
         for radius in range(self.radius):
-            node_rep = F.dropout(F.relu(self.bn[radius](node_current+neighbor_current)), p=self.dropout, training=self.training)
+            # node_rep = F.dropout(F.relu(self.bn[radius](node_current+neighbor_current)), p=self.dropout, training=self.training)
+            node_rep = F.relu(self.bn[radius](node_current + neighbor_current))
             fp, node_next = self.get_self(nz, node_rep, radius)
-            neighbor_next = self.get_neighbor_act(adjs_no_diag, node_current, edge_current, radius)
-            edge_next = self.conv[('edge', radius)](edge_current)
+            neighbor_next = self.get_neighbor_act(adj_mat, node_current, edge_current, radius)
+            # edge_next = self.conv[('edge', radius)](edge_current)
+            # edge_next = edge_current
+            edge_next = torch.matmul(adj_mat.unsqueeze(1).expand((-1, self.edge_embed_len, -1, -1)), edge_data)
+            adj_mats.append(adj_mat)
+            adj_mat = self.next_radius_adj_mat(adj_mat, adj_mats)
             fps.append(fp)
             node_current, neighbor_current, edge_current = node_next, neighbor_next, edge_next
 
