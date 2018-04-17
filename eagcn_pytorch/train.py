@@ -66,7 +66,7 @@ early_stop_diff = 0.11
 experiment_date = strftime("%b_%d_%H:%M", gmtime()) + 'N'
 print(experiment_date)
 use_cuda = torch.cuda.is_available()
-torch.from_numpy = lambda x: torch.from_numpy(x).cuda() if use_cuda else torch.from_numpy
+from_numpy = lambda x: torch.from_numpy(x).cuda() if use_cuda else torch.from_numpy
 FloatTensor = torch.cuda.FloatTensor if use_cuda else torch.FloatTensor
 LongTensor = torch.cuda.LongTensor if use_cuda else torch.LongTensor
 IntTensor = torch.cuda.IntTensor if use_cuda else torch.IntTensor
@@ -841,7 +841,7 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
             weights = Variable(weight_tensor(BCE_weight, labels=labels))
             if calcpos:
                 loss = F.cross_entropy(outputs, labels.nonzero()[:, 1],
-                                       weight=Variable(torch.from_numpy(normed_BCE_weight)), size_average=False)
+                                       weight=Variable(from_numpy(normed_BCE_weight)), size_average=False)
             else:
                 loss = F.binary_cross_entropy_with_logits(outputs.view(-1), labels.float().view(-1), weight=weights,
                                                           size_average=False)

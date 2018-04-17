@@ -18,7 +18,7 @@ from torch.autograd import Variable
 import torch.nn.functional as F
 
 use_cuda = torch.cuda.is_available()
-torch.from_numpy = lambda x: torch.from_numpy(x).cuda() if use_cuda else torch.from_numpy
+from_numpy = lambda x: torch.from_numpy(x).cuda() if use_cuda else torch.from_numpy
 FloatTensor = torch.cuda.FloatTensor if use_cuda else torch.FloatTensor
 LongTensor = torch.cuda.LongTensor if use_cuda else torch.LongTensor
 IntTensor = torch.cuda.IntTensor if use_cuda else torch.IntTensor
@@ -751,11 +751,11 @@ def mol_collate_func_reg(batch):
         conjAtt_list.append(filled_conjAtt)
         ringAtt_list.append(filled_ringAtt)
 
-    return ([torch.from_numpy(np.array(adj_list)), torch.from_numpy(np.array(afm_list)),
-             torch.from_numpy(np.array(bft_list)), torch.from_numpy(np.array(orderAtt_list)),
-             torch.from_numpy(np.array(aromAtt_list)), torch.from_numpy(np.array(conjAtt_list)),
-             torch.from_numpy(np.array(ringAtt_list)),
-             torch.from_numpy(np.array(label_list))])
+    return ([from_numpy(np.array(adj_list)), from_numpy(np.array(afm_list)),
+             from_numpy(np.array(bft_list)), from_numpy(np.array(orderAtt_list)),
+             from_numpy(np.array(aromAtt_list)), from_numpy(np.array(conjAtt_list)),
+             from_numpy(np.array(ringAtt_list)),
+             from_numpy(np.array(label_list))])
 
     # if use_cuda:
     #     return ([torch.from_numpy(np.array(adj_list)).cuda(), torch.from_numpy(np.array(afm_list)).cuda(),
@@ -817,11 +817,11 @@ def mol_collate_func_class(batch):
         conjAtt_list.append(filled_conjAtt)
         ringAtt_list.append(filled_ringAtt)
 
-    return ([torch.from_numpy(np.array(adj_list)), torch.from_numpy(np.array(afm_list)),
-             None, torch.from_numpy(np.array(orderAtt_list)),
-             torch.from_numpy(np.array(aromAtt_list)), torch.from_numpy(np.array(conjAtt_list)),
-             torch.from_numpy(np.array(ringAtt_list)),
-             torch.from_numpy(np.array(label_list))])
+    return ([from_numpy(np.array(adj_list)), from_numpy(np.array(afm_list)),
+             None, from_numpy(np.array(orderAtt_list)),
+             from_numpy(np.array(aromAtt_list)), from_numpy(np.array(conjAtt_list)),
+             from_numpy(np.array(ringAtt_list)),
+             from_numpy(np.array(label_list))])
 
     # if use_cuda:
     #     return ([torch.from_numpy(np.array(adj_list)).cuda(), torch.from_numpy(np.array(afm_list)).cuda(),
@@ -861,7 +861,7 @@ def weight_tensor(weights, labels):
             else:
                 weight_tensor.append(0)
 
-    return(torch.from_numpy(np.array(weight_tensor, dtype=np.float32)))
+    return(from_numpy(np.array(weight_tensor, dtype=np.float32)))
     #
     # if use_cuda:
     #     return (torch.from_numpy(np.array(weight_tensor, dtype=np.float32)).cuda())
