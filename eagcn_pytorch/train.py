@@ -66,7 +66,6 @@ early_stop_diff = 0.11
 experiment_date = strftime("%b_%d_%H:%M", gmtime()) + 'N'
 print(experiment_date)
 use_cuda = torch.cuda.is_available()
-from_numpy = lambda x: torch.from_numpy(x).cuda() if use_cuda else torch.from_numpy
 FloatTensor = torch.cuda.FloatTensor if use_cuda else torch.FloatTensor
 LongTensor = torch.cuda.LongTensor if use_cuda else torch.LongTensor
 IntTensor = torch.cuda.IntTensor if use_cuda else torch.IntTensor
