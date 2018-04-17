@@ -685,8 +685,7 @@ def test_model(loader, model, tasks, calcpos=False):
         # orderAtt_batch, aromAtt_batch, conjAtt_batch, ringAtt_batch = Variable(orderAtt), Variable(aromAtt), Variable(
         #     conjAtt), Variable(ringAtt)
         # outputs = model(adj_batch, afm_batch, btf_batch, orderAtt_batch, aromAtt_batch, conjAtt_batch, ringAtt_batch)
-        outputs = model(Variable(adj), Variable(afm), Variable(btf), Variable(orderAtt), Variable(aromAtt),
-                        Variable(conjAtt), Variable(ringAtt))
+        outputs = model(adj, afm, btf, orderAtt, aromAtt, conjAtt, ringAtt)
         if calcpos:
             smprobs = F.log_softmax(outputs, dim=1)
             labels_pos = np.array(torch.sum(
@@ -832,9 +831,10 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
             optimizer.zero_grad()
             # outputs = model(adj_batch, afm_batch, btf_batch, orderAtt_batch, aromAtt_batch, conjAtt_batch,
             #                 ringAtt_batch)
-            outputs = model(Variable(adj), Variable(afm), Variable(btf), Variable(orderAtt), Variable(aromAtt),
-                            Variable(conjAtt),
-                            Variable(ringAtt))
+            # outputs = model(Variable(adj), Variable(afm), Variable(btf), Variable(orderAtt), Variable(aromAtt),
+            #                 Variable(conjAtt),
+            #                 Variable(ringAtt))
+            outputs = model(adj, afm, btf, orderAtt, aromAtt, conjAtt, ringAtt)
             non_nan_num = Variable(FloatTensor([(labels == 1).sum() + (labels == 0).sum()]))
             labels = Variable(labels)
             weights = Variable(weight_tensor(BCE_weight, labels=labels))

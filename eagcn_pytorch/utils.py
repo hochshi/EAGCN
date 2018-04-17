@@ -811,6 +811,12 @@ def mol_collate_func_class(batch):
         conjAtt_list.append(filled_conjAtt)
         ringAtt_list.append(filled_ringAtt)
 
+    return ([torch.from_numpy(np.array(adj_list)), torch.from_numpy(np.array(afm_list)),
+             None, torch.from_numpy(np.array(orderAtt_list)),
+             torch.from_numpy(np.array(aromAtt_list)), torch.from_numpy(np.array(conjAtt_list)),
+             torch.from_numpy(np.array(ringAtt_list)),
+             torch.from_numpy(np.array(label_list))])
+
     if use_cuda:
         return ([torch.from_numpy(np.array(adj_list)).cuda(), torch.from_numpy(np.array(afm_list)).cuda(),
                  None, torch.from_numpy(np.array(orderAtt_list)).cuda(),

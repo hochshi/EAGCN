@@ -209,11 +209,13 @@ class Graph():
         edgeAttributes = np.concatenate((adjTensor_OrderAtt, adjTensor_AromAtt, adjTensor_ConjAtt, adjTensor_RingAtt),
                                         axis=0).transpose((1,2,0))
         edge_words = edgeAttributes[np.nonzero(mat_adjacency)].astype(np.int8).tolist()
+        edge_words += [[0] * len(edge_words[0])]
         edge_words = ["".join([str(i) for i in vec]) for vec in edge_words]
         edge_set = set(edge_words)
 
         nodeAttributes = mat_features[:, :len(self.atomtype_list_order) + 15]
         atom_words = nodeAttributes.astype(np.int8).tolist()
+        atom_words += [[0] * len(atom_words[0])]
         atom_words = ["".join([str(i) for i in vec]) for vec in atom_words]
         atom_set = set(atom_words)
 
