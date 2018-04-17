@@ -160,7 +160,7 @@ class Shi_GCN(nn.Module):
         next_adj_mat = torch.bmm(adj_mat, adj_mats[0])
         next_adj_mat[next_adj_mat!=0] = 1
         next_adj_mat = next_adj_mat - sum(adj_mats)
-        next_adj_mat = torch.clamp(next_adj_mat - Variable(torch.eye(next_adj_mat.size()[1]).float()*next_adj_mat.size()[1]), min=0)
+        next_adj_mat = torch.clamp(next_adj_mat - Variable(from_numpy(np.eye(next_adj_mat.size()[1])*next_adj_mat.size()[1]).float()), min=0)
         return next_adj_mat
 
     def forward(self, adjs, afms, bfts, OrderAtt, AromAtt, ConjAtt, RingAtt):  # bfts
