@@ -681,7 +681,7 @@ def test_model(loader, model, tasks, calcpos=False):
     true_value_dic = {}
     pos_0, pos_5, pos_10, pos_30, total = tuple([0] * 5)
     for adj, afm, btf, orderAtt, aromAtt, conjAtt, ringAtt, labels in loader:
-        adj_batch, afm_batch, btf_batch, label_batch = Variable(adj), Variable(afm), Variable(btf), Variable(labels)
+        # adj_batch, afm_batch, btf_batch, label_batch = Variable(adj), Variable(afm), Variable(btf), Variable(labels)
         # orderAtt_batch, aromAtt_batch, conjAtt_batch, ringAtt_batch = Variable(orderAtt), Variable(aromAtt), Variable(
         #     conjAtt), Variable(ringAtt)
         # outputs = model(adj_batch, afm_batch, btf_batch, orderAtt_batch, aromAtt_batch, conjAtt_batch, ringAtt_batch)
@@ -701,13 +701,13 @@ def test_model(loader, model, tasks, calcpos=False):
             if use_cuda:
                 out_list = probs.cpu().data.view(-1).numpy().tolist()
                 all_out.extend(out_list)
-                label_list = labels.cpu().numpy().tolist()
+                label_list = labels.tolist()
                 true_value.extend([item for sublist in label_list for item in sublist])
                 out_sep_list = probs.cpu().data.view(-1, len(tasks)).numpy().tolist()
             else:
                 # out_list = probs.data.view(-1).numpy().tolist()
                 # all_out.extend(out_list)
-                label_list = labels.numpy().tolist()
+                label_list = labels.tolist()
                 # true_value.extend([item for sublist in label_list for item in sublist])
                 out_sep_list = probs.data.view(-1, len(tasks)).numpy().tolist()
 
@@ -836,7 +836,7 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
             #                 Variable(ringAtt))
             outputs = model(adj, afm, btf, orderAtt, aromAtt, conjAtt, ringAtt)
             labels = Variable(from_numpy(labels).float())
-            non_nan_num = (labels == 1).sum() + (labels == 0).sum()
+            non_nan_num = ((labels == 1).sum() + (labels == 0).sum()).float()
             weights = Variable(weight_tensor(BCE_weight, labels=labels))
             if calcpos:
                 loss = F.cross_entropy(outputs, labels.nonzero()[:, 1],

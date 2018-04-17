@@ -83,11 +83,14 @@ class Shi_GCN(nn.Module):
         self.dropout = dropout
 
     def embed_edges(self, adjs, OrderAtt, AromAtt, ConjAtt, RingAtt):
+        nz = (0 != adjs.reshape(-1))
         edge_data = np.concatenate((OrderAtt, AromAtt, ConjAtt, RingAtt), axis=1).transpose(0, 2, 3, 1)
-        edges = edge_data.astype(np.int8).reshape(-1, self.edge_word_len).tolist()
+        edges = edge_data.astype(np.int8).reshape(-1, self.edge_word_len)[nz].tolist()
         edges = ["".join([str(i) for i in word]) for word in edges]
         edges = self.edge_embeddings(Variable(LongTensor([self.edge_to_ix[key] for key in edges])))
-        return edges.view(edge_data.shape[0:3] + (-1,)).permute(0, 3, 1, 2)
+        new_edges = Variable(from_numpy(np.zeros(nz.shape + (self.edge_embed_len,))).float())
+        new_edges[nz.nonzero()] = edges
+        return new_edges.view(edge_data.shape[0:3] + (-1,)).permute(0, 3, 1, 2)
 
         # edge_data = torch.cat((OrderAtt, AromAtt, ConjAtt, RingAtt), dim=1).permute(0, 2, 3, 1)
         # edges = edge_data.numpy().astype(np.int8).reshape(-1, self.edge_word_len).tolist()
@@ -104,11 +107,20 @@ class Shi_GCN(nn.Module):
         # return edge_data.permute(0, 3, 1, 2)
 
     def embed_nodes(self, adjs, afms):
-        nodes = afms.astype(np.int8).reshape(-1, afms.shape[2])[:, 0:self.node_word_len].tolist()
+        nz = (0 != adjs.max(axis=2).reshape(-1))
+        nodes = afms.reshape(-1, afms.shape[-1])[nz][:, 0:self.node_word_len].astype(np.int8).tolist()
         nodes = ["".join([str(i) for i in word]) for word in nodes]
         nodes = self.node_embeddings(Variable(LongTensor([self.node_to_ix[key] for key in nodes])))
+        new_nodes = Variable(from_numpy(np.zeros(nz.shape + (self.node_embed_len,))).float())
+        new_nodes[nz.nonzero()] = nodes
         remaining_node_attributes = Variable(from_numpy(afms.reshape(-1, afms.shape[2])[:, self.node_word_len:]))
-        return torch.cat((nodes, remaining_node_attributes), dim=1).view(afms.shape[0:-1] + (-1,))
+        return torch.cat((new_nodes, remaining_node_attributes), dim=1).view(afms.shape[0:-1] + (-1,))
+
+        # nodes = afms.astype(np.int8).reshape(-1, afms.shape[2])[:, 0:self.node_word_len].tolist()
+        # nodes = ["".join([str(i) for i in word]) for word in nodes]
+        # nodes = self.node_embeddings(Variable(LongTensor([self.node_to_ix[key] for key in nodes])))
+        # remaining_node_attributes = Variable(from_numpy(afms.reshape(-1, afms.shape[2])[:, self.node_word_len:]))
+        # return torch.cat((nodes, remaining_node_attributes), dim=1).view(afms.shape[0:-1] + (-1,))
 
         # nodes = afms.astype(np.int8).reshape(-1, afms.size()[2])[:, 0:self.node_word_len].tolist()
         # nodes = ["".join([str(i) for i in word]) for word in nodes]
@@ -184,8 +196,10 @@ class Shi_GCN(nn.Module):
         #TODO: Should we create edge_next for next iteration?
 
         for radius in range(self.radius):
-            # node_rep = F.dropout(F.relu(self.bn[radius](node_current+neighbor_current)), p=self.dropout, training=self.training)
-            node_rep = F.relu(self.bn[radius](node_current + neighbor_current))
+            node_rep = F.dropout(F.relu(self.bn[radius](node_current + neighbor_current)), p=self.dropout,
+                                 training=self.training)
+            # node_rep = F.dropout(F.relu(node_current + neighbor_current), p=self.dropout, training=self.training)
+            # node_rep = F.relu(self.bn[radius](node_current + neighbor_current))
             fp, node_next = self.get_self(nz, node_rep, radius)
             neighbor_next = self.get_neighbor_act(adj_mat, node_current, edge_current, radius)
             # edge_next = self.conv[('edge', radius)](edge_current)
