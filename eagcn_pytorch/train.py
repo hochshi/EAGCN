@@ -836,7 +836,7 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
             #                 Variable(ringAtt))
             outputs = model(adj, afm, btf, orderAtt, aromAtt, conjAtt, ringAtt)
             labels = Variable(from_numpy(labels).float())
-            non_nan_num = Variable(FloatTensor([(labels == 1).sum() + (labels == 0).sum()]))
+            non_nan_num = (labels == 1).sum() + (labels == 0).sum()
             weights = Variable(weight_tensor(BCE_weight, labels=labels))
             if calcpos:
                 loss = F.cross_entropy(outputs, labels.nonzero()[:, 1],
