@@ -31,7 +31,7 @@ class Shi_GCN(nn.Module):
         self.radius = radius+1
 
         self.edge_to_ix = {edge: i for i, edge in enumerate(edge_vocab)}
-        self.edge_word_len = len(self.edge_to_ix.keys()[0])
+        self.edge_word_len = len(list(self.edge_to_ix.keys())[0])
         self.edge_embed_len = edge_embedding_dim
         self.node_to_ix = {node: i for i, node in enumerate(node_vocab)}
         self.node_word_len = len(self.node_to_ix.keys()[0])
