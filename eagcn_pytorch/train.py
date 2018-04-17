@@ -739,7 +739,7 @@ def test_model(loader, model, tasks, calcpos=False):
 
 
 def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
-    x_all, y_all, target, sizes, mol_to_graph_transform, parameter_holder = load_data(dataset)
+    x_all, y_all, target, sizes, mol_to_graph_transform, parameter_holder, edge_words, node_words = load_data(dataset)
     max_size = max(sizes)
     x_all, y_all = data_filter(x_all, y_all, target, sizes, tasks)
     x_all, y_all = shuffle(x_all, y_all, random_state=random_state)
@@ -757,11 +757,11 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
     del x_test, y_test
 
     if parameter_holder is None:
-        n_afeat = 25
-        n_bfeat = X[0][2].shape[0]
+        n_afeat = 32
+        n_bfeat = 0
     else:
         n_afeat = mol_to_graph_transform.afnorm.feature_num
-        n_bfeat = parameter_holder.n_bfeat
+        n_bfeat = 0 # parameter_holder.n_bfeat
 
     model = Shi_GCN(n_bfeat=n_bfeat, n_afeat=n_afeat,
                             n_sgc1_1=n_sgc1_1, n_sgc1_2=n_sgc1_2, n_sgc1_3=n_sgc1_3, n_sgc1_4=n_sgc1_4,
@@ -769,7 +769,8 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
                             n_sgc2_1=n_sgc2_1, n_sgc2_2=n_sgc2_2, n_sgc2_3=n_sgc2_3, n_sgc2_4=n_sgc2_4,
                             n_sgc2_5=n_sgc2_5,
                             n_den1=n_den1, n_den2=n_den2,
-                            nclass=len(tasks), dropout=dropout)
+                            nclass=len(tasks), dropout=dropout,
+                    edge_vocab=edge_words, node_vocab=node_words)
 
     # if EAGCN_structure == 'concate':
     #     model = Concate_GCN(n_bfeat=n_bfeat, n_afeat=n_afeat,

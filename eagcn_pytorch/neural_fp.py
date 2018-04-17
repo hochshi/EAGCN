@@ -157,9 +157,9 @@ class Graph():
 
         mat_features = np.zeros((N_nodes, F_a), dtype=np.float32)
         mat_adjacency = np.zeros((N_nodes, N_nodes), dtype=np.float32)
-        mat_specialbondtypes = np.zeros((N_nodes, F_b), dtype=np.float32)
-        adjTensor = np.zeros([F_b, N_nodes, N_nodes], dtype=np.float32)
-        adjTensorAtt = np.zeros([F_bAtt, N_nodes, N_nodes], dtype=np.float32)
+        # mat_specialbondtypes = np.zeros((N_nodes, F_b), dtype=np.float32)
+        # adjTensor = np.zeros([F_b, N_nodes, N_nodes], dtype=np.float32)
+        # adjTensorAtt = np.zeros([F_bAtt, N_nodes, N_nodes], dtype=np.float32)
 
         adjTensor_OrderAtt = np.zeros([5, N_nodes, N_nodes], dtype=np.float32)
         adjTensor_AromAtt = np.zeros([3, N_nodes, N_nodes], dtype=np.float32)
@@ -172,7 +172,7 @@ class Graph():
         for i, node in enumerate(self.nodes):
             mat_features[i, :] = nodeAttributes[i]
             mat_adjacency[i, i] = 1.0  # include self terms
-            adjTensorAtt[0:len(self.atomtype_list_order), i, i] = node.attributesAtt
+            # adjTensorAtt[0:len(self.atomtype_list_order), i, i] = node.attributesAtt
             adjTensor_OrderAtt[0, i, i] = 1
             adjTensor_AromAtt[0, i, i] = 1
             adjTensor_ConjAtt[0, i, i] = 1
@@ -185,8 +185,8 @@ class Graph():
 
             # Keep track of extra special bond types - which are nothing more than
             # bias terms specific to the bond type because they are all one-hot encoded
-            mat_specialbondtypes[i, :] += edgeAttributes[e]
-            mat_specialbondtypes[j, :] += edgeAttributes[e]
+            # mat_specialbondtypes[i, :] += edgeAttributes[e]
+            # mat_specialbondtypes[j, :] += edgeAttributes[e]
 
         for edge in self.edges:
             (i, j) = edge.connects
@@ -194,8 +194,8 @@ class Graph():
             # adjTensor[0, j, i] = 1.0
             # adjTensor[0:, i, j] = edge.attributes
             # adjTensor[0:, j, i] = edge.attributes
-            adjTensorAtt[len(self.atomtype_list_order):, i, j] = edge.attributesAtt
-            adjTensorAtt[len(self.atomtype_list_order):, j, i] = edge.attributesAtt
+            # adjTensorAtt[len(self.atomtype_list_order):, i, j] = edge.attributesAtt
+            # adjTensorAtt[len(self.atomtype_list_order):, j, i] = edge.attributesAtt
 
             adjTensor_OrderAtt[1:, i, j] = edge.orderAtt
             adjTensor_OrderAtt[1:, j, i] = edge.orderAtt
@@ -206,8 +206,21 @@ class Graph():
             adjTensor_RingAtt[1:, i, j] = edge.ringAtt
             adjTensor_RingAtt[1:, j, i] = edge.ringAtt
 
-        return (mat_features, mat_adjacency, adjTensorAtt, adjTensor_OrderAtt, adjTensor_AromAtt, adjTensor_ConjAtt,
-                adjTensor_RingAtt)  # replace mat_specialbondtypes bt adjTensor
+        edgeAttributes = np.concatenate((adjTensor_OrderAtt, adjTensor_AromAtt, adjTensor_ConjAtt, adjTensor_RingAtt),
+                                        axis=0).transpose((1,2,0))
+        edge_words = edgeAttributes[np.nonzero(mat_adjacency)].astype(np.int8).tolist()
+        edge_words = ["".join([str(i) for i in vec]) for vec in edge_words]
+        edge_set = set(edge_words)
+
+        nodeAttributes = mat_features[:, :len(self.atomtype_list_order) + 15]
+        atom_words = nodeAttributes.astype(np.int8).tolist()
+        atom_words = ["".join([str(i) for i in vec]) for vec in atom_words]
+        atom_set = set(atom_words)
+
+        return (mat_features, mat_adjacency, None, adjTensor_OrderAtt, adjTensor_AromAtt, adjTensor_ConjAtt,
+                adjTensor_RingAtt, edge_set, atom_set)  # replace mat_specialbondtypes bt adjTensor
+        # return (mat_features, mat_adjacency, adjTensorAtt, adjTensor_OrderAtt, adjTensor_AromAtt, adjTensor_ConjAtt,
+        #         adjTensor_RingAtt)  # replace mat_specialbondtypes bt adjTensor
 
 
 class Node():
@@ -296,42 +309,47 @@ def molToGraph(rdmol, bondtype_list_order, atomtype_list_order, molecular_attrib
     for bond in rdmol.GetBonds():
         edge = Edge()
         edge.i = bond.GetIdx()
-        edge.attributes = bondAttributes(bond)
+        # edge.attributes = bondAttributes(bond) # Not used
+        #TODO: The following 4 attributes together with attributesAtt (type of atoms in bond) will be used to create word embeddings
+        #TODO: Build edge attribute dictionary
         edge.orderAtt = list(oneHotVector(bond.GetBondTypeAsDouble(), [1.0, 1.5, 2.0, 3.0]))
         edge.aromAtt = list(oneHotVector(bond.GetIsAromatic(), [1.0, 0.0]))
         edge.conjAtt = list(oneHotVector(bond.GetIsConjugated(), [1.0, 0.0]))
         edge.ringAtt = list(oneHotVector(bond.IsInRing(), [1.0, 0.0]))
 
-        BeginAtom, EndAtom = bond.GetBeginAtom(), bond.GetEndAtom()
-        begin_idx, end_idx = BeginAtom.GetAtomicNum(), EndAtom.GetAtomicNum()
-        if begin_idx < end_idx:
-            bond_type = str(begin_idx) + '_' + str(end_idx)
-        else:
-            bond_type = str(end_idx) + '_' + str(begin_idx)
+        # BeginAtom, EndAtom = bond.GetBeginAtom(), bond.GetEndAtom()
+        # begin_idx, end_idx = BeginAtom.GetAtomicNum(), EndAtom.GetAtomicNum()
+        # if begin_idx < end_idx:
+        #     bond_type = str(begin_idx) + '_' + str(end_idx)
+        # else:
+        #     bond_type = str(end_idx) + '_' + str(begin_idx)
+        #
+        # bond_attributes = []
+        # bond_attributes = bond_attributes + list(oneHotVector(bond_type, bondtype_list_order))
+        # edge.attributesAtt = np.array(bond_attributes, dtype=att_dtype)
 
-        bond_attributes = []
-        bond_attributes = bond_attributes + list(oneHotVector(bond_type, bondtype_list_order))
-        edge.attributesAtt = np.array(bond_attributes, dtype=att_dtype)
+        #TODO: END build dictionary out of these 5 attributes
 
         edge.connects = (bond.GetBeginAtomIdx(), bond.GetEndAtomIdx())
         graph.edges.append(edge)
+
     # Add atoms
     for k, atom in enumerate(rdmol.GetAtoms()):
         node = Node()
         node.i = atom.GetIdx()
-        node.attributes = atomAttributes(atom, extra_attributes=attributes[k])
-        node_type = atom.GetAtomicNum()
-        node_attributesAtt = []
-        node_attributesAtt = node_attributesAtt + list(oneHotVector(node_type, atomtype_list_order))
-        node.attributesAtt = np.array(node_attributesAtt, dtype=att_dtype)
-        for neighbor in atom.GetNeighbors():
-            node.neighbors.append((
-                neighbor.GetIdx(),
-                rdmol.GetBondBetweenAtoms(
-                    atom.GetIdx(),
-                    neighbor.GetIdx()
-                ).GetIdx()
-            ))
+        node.attributes = atomAttributes(atom, atomtype_list_order, extra_attributes=attributes[k])
+        # node_type = atom.GetAtomicNum()
+        # node_attributesAtt = []
+        # node_attributesAtt = node_attributesAtt + list(oneHotVector(node_type, atomtype_list_order))
+        # node.attributesAtt = np.array(node_attributesAtt, dtype=att_dtype)
+        # for neighbor in atom.GetNeighbors():
+        #     node.neighbors.append((
+        #         neighbor.GetIdx(),
+        #         rdmol.GetBondBetweenAtoms(
+        #             atom.GetIdx(),
+        #             neighbor.GetIdx()
+        #         ).GetIdx()
+        #     ))
         graph.nodes.append(node)
     # Add counts, for convenience
     graph.num_edges = len(graph.edges)
@@ -366,7 +384,7 @@ def bondAttributes(bond):
     return np.array(attributes, dtype=att_dtype)
 
 
-def atomAttributes(atom, extra_attributes=[]):
+def atomAttributes(atom, atomtype_list_order, extra_attributes=[]):
     '''Returns a numpy array of attributes for an RDKit atom
 
 	From ECFP defaults:
@@ -378,29 +396,41 @@ def atomAttributes(atom, extra_attributes=[]):
         <Property Name="IsRingAtom" Value="1"/>
     </IdentifierConfiguration>
     '''
+    #TODO: Turn one hot vectors into a dictionary for word embedding
     # Initialize
+    neighbors = [0, 1, 2, 3, 4, 5]
+    total_num_hs = [0, 1, 2, 3, 4]
+    ring = [0.0, 1.0]
+    aromatic = [0.0, 1.0]
+
     attributes = []
     # Add atomic number (todo: finish)
-    attributes += oneHotVector(
-        atom.GetAtomicNum(),
-        [5, 6, 7, 8, 9, 15, 16, 17, 35, 53, 999]
-    )
+    # attributes += oneHotVector(
+    #     atom.GetAtomicNum(),
+    #     [5, 6, 7, 8, 9, 15, 16, 17, 35, 53, 999]
+    # )
+    attributes += list(oneHotVector(atom.GetAtomicNum(), atomtype_list_order))
     # Add heavy neighbor count
     attributes += oneHotVector(
         len(atom.GetNeighbors()),
-        [0, 1, 2, 3, 4, 5]
+        neighbors
     )
     # Add hydrogen count
     attributes += oneHotVector(
         atom.GetTotalNumHs(),
-        [0, 1, 2, 3, 4]
+        total_num_hs
     )
+    # Add boolean if in ring
+    # attributes.append(atom.IsInRing())
+    attributes += oneHotVector(atom.IsInRing(), ring)
+    # Add boolean if aromatic atom
+    # attributes.append(atom.GetIsAromatic())
+    attributes += oneHotVector(atom.GetIsAromatic(), aromatic)
+
+    # TODO: END word embedding
+
     # Add formal charge
     attributes.append(atom.GetFormalCharge())
-    # Add boolean if in ring
-    attributes.append(atom.IsInRing())
-    # Add boolean if aromatic atom
-    attributes.append(atom.GetIsAromatic())
 
     attributes += extra_attributes
 

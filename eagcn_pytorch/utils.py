@@ -26,8 +26,9 @@ DoubleTensor = torch.cuda.DoubleTensor if use_cuda else torch.DoubleTensor
 def load_data(dataset, path = '../data/'):
     mol_to_graph_transform = None
     parameter_holder = None
+    edge_words, node_words = None, None
     if dataset == 'tox21':
-        x_all, y_all, target, sizes = load_dc_tox21(path=path, keep_nan=True)
+        x_all, y_all, target, sizes, edge_words, node_words = load_dc_tox21(path=path, keep_nan=True)
     elif dataset == 'hiv':
         x_all, y_all, target, sizes = load_hiv(path=path, keep_nan=True)
     elif dataset == 'lipo':
@@ -37,8 +38,8 @@ def load_data(dataset, path = '../data/'):
     elif dataset == 'esol':
         x_all, y_all, target, sizes = load_esol()
     elif dataset == 'pubchem_chembl':
-        x_all, y_all, target, sizes, mol_to_graph_transform, parameter_holder = load_pubchem(path=path, keep_nan=False)
-    return (x_all, y_all, target, sizes, mol_to_graph_transform, parameter_holder)
+        x_all, y_all, target, sizes, mol_to_graph_transform, parameter_holder, edge_words, node_words = load_pubchem(path=path, keep_nan=False)
+    return (x_all, y_all, target, sizes, mol_to_graph_transform, parameter_holder, edge_words, node_words)
 
 def load_lipo(path='../data/', dataset = 'Lipophilicity.csv', bondtype_freq = 10,
                     atomtype_freq=10):
@@ -288,6 +289,10 @@ def load_dc_tox21(path='../data/', dataset = 'tox21.csv', bondtype_freq =20, ato
     mol_sizes = []
     x_all = []
     y_all = []
+
+    edge_words = set()
+    node_words = set()
+
     print('Transfer mol to matrices')
     for row in data[1:]:
         smile = row[13]
@@ -302,11 +307,13 @@ def load_dc_tox21(path='../data/', dataset = 'tox21.csv', bondtype_freq =20, ato
         i = i + 1
         try:
             (afm, adj, bft, adjTensor_OrderAtt,
-             adjTensor_AromAtt, adjTensor_ConjAtt, adjTensor_RingAtt) = molToGraph(mol, filted_bondtype_list_order,
+             adjTensor_AromAtt, adjTensor_ConjAtt, adjTensor_RingAtt, edge_word_set, node_word_set) = molToGraph(mol, filted_bondtype_list_order,
                                                                                    filted_atomtype_list_order).dump_as_matrices_Att()
             x_all.append([afm, adj, bft, adjTensor_OrderAtt, adjTensor_AromAtt, adjTensor_ConjAtt, adjTensor_RingAtt])
             y_all.append(num_label)
             mol_sizes.append(adj.shape[0])
+            edge_words = edge_words.union(edge_word_set)
+            node_words = node_words.union(node_word_set)
             # feature matrices of mols, include Adj Matrix, Atom Feature, Bond Feature.
         except AttributeError:
             print('the {}th row has an error'.format(i))
@@ -318,7 +325,7 @@ def load_dc_tox21(path='../data/', dataset = 'tox21.csv', bondtype_freq =20, ato
             pass
     x_all = feature_normalize(x_all)
     print('Done.')
-    return (x_all, y_all, target, mol_sizes)
+    return (x_all, y_all, target, mol_sizes, edge_words, node_words)
 
 def load_hiv(path='../data/', dataset = 'HIV.csv', bondtype_freq =20, atomtype_freq =10, keep_nan=True):
     print('Loading {} dataset...'.format(dataset))
@@ -410,7 +417,7 @@ class MolGraph(object):
 
     def __call__(self, sample):
         mol = self.text_to_mol_func(sample)
-        (afm, adj, bft, orderAtt, aromAtt, conjAtt, ringAtt) = \
+        (afm, adj, bft, orderAtt, aromAtt, conjAtt, ringAtt, edge_word_set, node_word_set) = \
             molToGraph(mol, self.bondtype_list_order, self.atomtype_list_order, molecular_attributes=True)\
                 .dump_as_matrices_Att()
         # This is the order in which the features are returned by the dataset see class MolDataset(Dataset)
@@ -501,6 +508,10 @@ def load_pubchem(path='../data/', dataset = 'small_batch_test.csv', bondtype_fre
     mol_sizes = []
     x_all = []
     y_all = []
+
+    edge_words = set()
+    node_words = set()
+
     afnorm = None
     parameter_holder = None
     print('Transfer mol to matrices')
@@ -516,7 +527,7 @@ def load_pubchem(path='../data/', dataset = 'small_batch_test.csv', bondtype_fre
         try:
             mol = MolFromInchi(inchi)
             (afm, adj, bft, adjTensor_OrderAtt,
-             adjTensor_AromAtt, adjTensor_ConjAtt, adjTensor_RingAtt) = molToGraph(mol, filted_bondtype_list_order,
+             adjTensor_AromAtt, adjTensor_ConjAtt, adjTensor_RingAtt, edge_word_set, node_word_set) = molToGraph(mol, filted_bondtype_list_order,
                                                                                    filted_atomtype_list_order,
                                                                                    molecular_attributes=True).dump_as_matrices_Att()
             # x_all.append([afm, adj, bft, adjTensor_OrderAtt, adjTensor_AromAtt, adjTensor_ConjAtt, adjTensor_RingAtt])
@@ -530,6 +541,8 @@ def load_pubchem(path='../data/', dataset = 'small_batch_test.csv', bondtype_fre
             afnorm.update_min_max(afm)
             y_all.append(num_label)
             mol_sizes.append(adj.shape[0])
+            edge_words = edge_words.union(edge_word_set)
+            node_words = node_words.union(node_word_set)
             # feature matrices of mols, include Adj Matrix, Atom Feature, Bond Feature.
         except AttributeError:
             print('the {}th row has an error'.format(i))
@@ -543,7 +556,7 @@ def load_pubchem(path='../data/', dataset = 'small_batch_test.csv', bondtype_fre
     mol_to_graph_transform = MolGraph(MolFromInchi, filted_atomtype_list_order, filted_bondtype_list_order, afnorm)
     with open('{}{}{}'.format(path, dataset, '.npz'), 'w') as data_fid:
         np.savez(data_fid, x_all=x_all, y_all=y_all, target=target, mol_sizes=mol_sizes, mol_to_graph_transform=[mol_to_graph_transform], parameter_holder=[parameter_holder])
-    return (x_all, y_all, target, mol_sizes, mol_to_graph_transform, parameter_holder)
+    return (x_all, y_all, target, mol_sizes, mol_to_graph_transform, parameter_holder, edge_words, node_words)
 
 def data_filter(x_all, y_all, target, sizes, tasks, size_cutoff=1000):
     idx_row = []
@@ -757,14 +770,14 @@ def mol_collate_func_class(batch):
     afm_list =[]
     label_list = []
     size_list = []
-    bft_list = []
+    # bft_list = []
     orderAtt_list, aromAtt_list, conjAtt_list, ringAtt_list = [], [], [], []
 
     for datum in batch:
         label_list.append(datum[7])
         size_list.append(datum[0].shape[0])
     max_size = np.max(size_list) # max of batch    222 for hiv, 132 for tox21,
-    btf_len = datum[2].shape[0]
+    # btf_len = datum[2].shape[0]
     atf_len = datum[1].shape[1]
     #max_size = max_molsize #max_molsize 132
     # padding
@@ -775,8 +788,8 @@ def mol_collate_func_class(batch):
         # Originally the number of atom features is set at 25
         filled_afm = np.zeros((max_size, atf_len), dtype=np.float32)
         filled_afm[0:datum[0].shape[0], :] = datum[1]
-        filled_bft = np.zeros((btf_len, max_size, max_size), dtype=np.float32)
-        filled_bft[:, 0:datum[0].shape[0], 0:datum[0].shape[0]] = datum[2]
+        # filled_bft = np.zeros((btf_len, max_size, max_size), dtype=np.float32)
+        # filled_bft[:, 0:datum[0].shape[0], 0:datum[0].shape[0]] = datum[2]
 
         filled_orderAtt = np.zeros((5, max_size, max_size), dtype=np.float32)
         filled_orderAtt[:, 0:datum[0].shape[0], 0:datum[0].shape[0]] = datum[3]
@@ -792,7 +805,7 @@ def mol_collate_func_class(batch):
 
         adj_list.append(filled_adj)
         afm_list.append(filled_afm)
-        bft_list.append(filled_bft)
+        # bft_list.append(filled_bft)
         orderAtt_list.append(filled_orderAtt)
         aromAtt_list.append(filled_aromAtt)
         conjAtt_list.append(filled_conjAtt)
@@ -800,13 +813,13 @@ def mol_collate_func_class(batch):
 
     if use_cuda:
         return ([torch.from_numpy(np.array(adj_list)).cuda(), torch.from_numpy(np.array(afm_list)).cuda(),
-                 torch.from_numpy(np.array(bft_list)).cuda(), torch.from_numpy(np.array(orderAtt_list)).cuda(),
+                 None, torch.from_numpy(np.array(orderAtt_list)).cuda(),
                  torch.from_numpy(np.array(aromAtt_list)).cuda(), torch.from_numpy(np.array(conjAtt_list)).cuda(),
                  torch.from_numpy(np.array(ringAtt_list)).cuda(),
                  FloatTensor(label_list)])
     else:
         return ([torch.from_numpy(np.array(adj_list)), torch.from_numpy(np.array(afm_list)),
-             torch.from_numpy(np.array(bft_list)),torch.from_numpy(np.array(orderAtt_list)),
+             None,torch.from_numpy(np.array(orderAtt_list)),
                  torch.from_numpy(np.array(aromAtt_list)), torch.from_numpy(np.array(conjAtt_list)),
                  torch.from_numpy(np.array(ringAtt_list)),
                  FloatTensor(label_list)])

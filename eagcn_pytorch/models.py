@@ -4,6 +4,7 @@ from layers import *
 from utils import *
 import torch
 from torch.autograd import Variable
+from fractions import gcd
 
 use_cuda = torch.cuda.is_available()
 FloatTensor = torch.cuda.FloatTensor if use_cuda else torch.FloatTensor
@@ -17,7 +18,8 @@ class Shi_GCN(nn.Module):
     def __init__(self, n_bfeat, n_afeat, n_sgc1_1, n_sgc1_2, n_sgc1_3, n_sgc1_4, n_sgc1_5,
                  n_sgc2_1, n_sgc2_2, n_sgc2_3, n_sgc2_4, n_sgc2_5,
                  n_den1, n_den2,
-                 nclass, dropout, use_att = True, molfp_mode = 'sum', hidden_size=50, radius=1):
+                 nclass, dropout, edge_vocab, node_vocab, use_att = True, molfp_mode = 'sum', hidden_size=50, radius=4,
+                 edge_embedding_dim = 15, node_embedding_dim = 15):
         super(Shi_GCN, self).__init__()
 
         self.ngc1 = n_sgc1_1 + n_sgc1_2 + n_sgc1_3 + n_sgc1_4 + n_sgc1_5
@@ -28,94 +30,206 @@ class Shi_GCN(nn.Module):
         hidden_size = self.hidden_size
         self.radius = radius+1
 
+        self.edge_to_ix = {edge: i for i, edge in enumerate(edge_vocab)}
+        self.edge_word_len = len(self.edge_to_ix.keys()[0])
+        self.edge_embed_len = edge_embedding_dim
+        self.node_to_ix = {node: i for i, node in enumerate(node_vocab)}
+        self.node_word_len = len(self.node_to_ix.keys()[0])
+        self.node_embed_len = node_embedding_dim
+        self.edge_embeddings = nn.Embedding(len(edge_vocab), edge_embedding_dim)
+        self.node_embeddings = nn.Embedding(len(node_vocab), node_embedding_dim)
+
+        self.node_attr_len = n_afeat - self.node_word_len + self.node_embed_len
+
+        self.conv = {}
+        self.bn = {}
+
+        for rad in range(self.radius):
+            setattr(self, '_'.join(('conv', 'self', str(rad))),
+                    nn.Conv1d(self.node_attr_len, self.node_attr_len, kernel_size=1,
+                              stride=1, padding=0, dilation=1, groups=1,
+                              bias=True))
+            self.conv[('self', rad)] = getattr(self, '_'.join(('conv', 'self', str(rad))))
+
+            setattr(self, '_'.join(('conv', 'out', str(rad))), nn.Conv1d(self.node_attr_len, ngc1, kernel_size=1,
+                                                                         stride=1, padding=0, dilation=1,
+                                                                         groups=1,
+                                                                         bias=True))
+            self.conv[('out', rad)] = getattr(self, '_'.join(('conv', 'out', str(rad))))
+
+            setattr(self, '_'.join(('conv', 'neighbor', str(rad))), nn.Conv2d(self.node_attr_len + self.edge_embed_len,
+                                                                              self.node_attr_len, kernel_size=1,
+                                                                              stride=1,
+                                                                              padding=0, dilation=1, groups=1, bias=True))
+            self.conv[('neighbor', rad)] = getattr(self, '_'.join(('conv', 'neighbor', str(rad))))
+
+            setattr(self, '_'.join(('conv', 'edge', str(rad))), nn.Conv2d(self.edge_embed_len, self.edge_embed_len,
+                                                                          kernel_size=1, stride=1, padding=0,
+                                                                          dilation=1,
+                                                                          groups=1, bias=True))
+            self.conv[('edge', rad)] = getattr(self, '_'.join(('conv', 'edge', str(rad))))
+
+            setattr(self, '_'.join(('bn', str(rad))), nn.BatchNorm1d(self.node_attr_len))
+            self.bn[rad] = getattr(self, '_'.join(('bn', str(rad))))
+
+        self.dense = nn.Linear(ngc1, nclass)
+
+        self.out_softmax = nn.Softmax(dim=1)
+        self.dropout = dropout
+
         # TODO: Fix this - this is A one dimension Conv
         # self.conv0 = nn.Conv2d(n_afeat, ngc1)
         # self.bn0 = AFM_BatchNorm(ngc1)
 
-        self.i2h = nn.Linear(ngc1 + hidden_size, hidden_size)
-        self.i2o = nn.Linear(ngc1 + hidden_size, ngc1)
+        # self.i2h = nn.Linear(ngc1 + hidden_size, hidden_size)
+        # self.i2o = nn.Linear(ngc1 + hidden_size, ngc1)
+        #
+        # self.bn = nn.BatchNorm1d(ngc1)
+        # self.bnfp = nn.BatchNorm1d(2*ngc1)
+        # self.soft = nn.Softmax(dim=1)
+        #
+        # self.att0 = nn.Conv2d(n_afeat + n_bfeat + 5 + 3 + 3 + 3, ngc1, kernel_size=1, stride=1, padding=0, dilation=1,
+        #                       groups=1, bias=True)
+        #
+        # self.att1 = nn.Conv2d(n_afeat + n_bfeat + 5 + 3 + 3 + 3, ngc1, kernel_size=1, stride=1, padding=0, dilation=1, groups=1, bias=True)
+        #
+        # self.den1 = Dense(2*self.ngc1, n_den1)
+        # self.den2 = Dense(n_den1, n_den2)
+        # self.den3 = Dense(n_den2, nclass)
+        # self.bn_den1 = nn.BatchNorm1d(n_den1)
+        # self.bn_den2 = nn.BatchNorm1d(n_den2)
 
-        self.bn = nn.BatchNorm1d(ngc1)
-        self.bnfp = nn.BatchNorm1d(2*ngc1)
-        self.soft = nn.Softmax(dim=1)
+        # self.use_att = use_att
 
-        self.att0 = nn.Conv2d(n_afeat + n_bfeat + 5 + 3 + 3 + 3, ngc1, kernel_size=1, stride=1, padding=0, dilation=1,
-                              groups=1, bias=True)
+    def embed_edges(self, adjs, OrderAtt, AromAtt, ConjAtt, RingAtt):
+        edge_data = torch.cat((OrderAtt, AromAtt, ConjAtt, RingAtt), dim=1).permute((0, 2, 3, 1))
+        nz = adjs.nonzero()
+        edges = edge_data[nz[:, 0], nz[:, 1], nz[:, 2], :].data.numpy().astype(
+            np.int8).tolist()
+        edges = ["".join([str(i) for i in word]) for word in edges]
+        edges = self.edge_embeddings(Variable(torch.LongTensor([self.edge_to_ix[key] for key in edges])))
+        edge_data = Variable(FloatTensor(adjs.size() + (self.edge_embed_len,)))
+        edge_data.zero_()
+        edge_data[nz[:, 0].data, nz[:, 1].data, nz[:, 2].data, :] = edges
+        return edge_data.permute((0, 3, 1, 2))
 
-        self.att1 = nn.Conv2d(n_afeat + n_bfeat + 5 + 3 + 3 + 3, ngc1, kernel_size=1, stride=1, padding=0, dilation=1, groups=1, bias=True)
+    def embed_nodes(self, adjs, afms):
+        nz, _ = adjs.max(dim=2)
+        nz = nz.nonzero()
+        nodes = afms[nz[:,0].data, nz[:,1].data, :][:, 0:self.node_word_len].data.numpy().astype(np.int8).tolist()
+        nodes = ["".join([str(i) for i in word]) for word in nodes]
+        nodes = self.node_embeddings(Variable(torch.LongTensor([self.node_to_ix[key] for key in nodes])))
 
-        self.den1 = Dense(2*self.ngc1, n_den1)
-        self.den2 = Dense(n_den1, n_den2)
-        self.den3 = Dense(n_den2, nclass)
-        self.bn_den1 = nn.BatchNorm1d(n_den1)
-        self.bn_den2 = nn.BatchNorm1d(n_den2)
-        self.dropout = dropout
-        self.use_att = use_att
+        node_data = Variable(FloatTensor(afms.size()[0:2] + (self.node_embed_len,)))
+        node_data.zero_()
+        node_data[nz[:, 0].data, nz[:, 1].data, :] = nodes
+        return torch.cat((node_data, afms[:, :, self.node_word_len:]), dim=2)
 
-    def init_hidden(self):
-        return Variable(torch.zeros(1, self.hidden_size))
+    def get_self(self, nz, node_data, layer):
+        return (
+            self.get_self_out(nz, node_data, self.conv[('out', layer)]),
+            self.get_self_act(nz, node_data, self.conv[('self', layer)])
+        )
 
-    def rnn_forward(self, input, hidden):
-        combined = torch.cat((input, hidden), 1)
-        hidden = self.i2h(combined)
-        output = self.i2o(combined)
-        return output, hidden
+    def get_self_out(self, nz, node_data, conv):
+        layer = conv(node_data)
+        layer = torch.mul(layer, nz.unsqueeze(1).expand(-1, self.ngc1, -1))
+        layer = torch.sum(layer, dim=2)
+        return self.out_softmax(layer)
+
+    def get_self_act(self, nz, node_data, conv):
+        layer = conv(node_data)
+        layer = torch.mul(layer, nz.unsqueeze(1).expand(-1, self.node_attr_len, -1))
+        return layer # torch.sum(layer, dim=2)
+
+    def get_neighbor_act(self, adjs_no_diag, node_data, edge_data, layer):
+        lna = torch.mul(adjs_no_diag.unsqueeze(1).expand(-1, self.node_attr_len, -1, -1), node_data.unsqueeze(3))
+        lnb = torch.mul(adjs_no_diag.unsqueeze(1).expand((-1, self.edge_embed_len, -1, -1)), edge_data)
+        ln = torch.cat((lna, lnb), dim=1)
+        ln = self.conv[('neighbor', layer)](ln)
+        ln = torch.mul(adjs_no_diag.unsqueeze(1).expand((-1, self.node_attr_len, -1, -1)), ln)
+        ln = ln.sum(dim=3)
+        return ln
 
     def forward(self, adjs, afms, bfts, OrderAtt, AromAtt, ConjAtt, RingAtt):  # bfts
+        edge_data = self.embed_edges(adjs, OrderAtt, AromAtt, ConjAtt, RingAtt)
+        node_data = self.embed_nodes(adjs, afms).permute((0, 2, 1))
+
         adjs_no_diag = torch.clamp(adjs - Variable(torch.eye(adjs.size()[1]).float()), min=0)
 
-        adjs_diag = adjs - adjs_no_diag
-        adjs_afms = torch.mul(adjs_diag.unsqueeze(3).expand(-1, -1, -1, afms.size()[2]), afms.unsqueeze(1)).permute(
-            0, 3, 1, 2)
-        adjs_att = torch.cat((adjs_afms, bfts, OrderAtt, AromAtt, ConjAtt, RingAtt), dim=1)
-        att = self.soft(self.att0(adjs_att))
-        att = torch.sum(att, dim=3)
-        fp0 = torch.sum(torch.bmm(att, afms), dim=2)
-        fp0, hidden = self.rnn_forward(fp0, self.init_hidden().expand(fp0.size()[0], -1))
+        nz, _ = adjs.max(dim=2)
 
-        fp0 = F.dropout(F.relu(self.bn(fp0)), p=self.dropout, training=self.training)
+        fps = []
+
+        node_current = node_data
+        neighbor_current = torch.zeros_like(node_data)
+        edge_current = edge_data
+
+        #TODO: Should we create edge_next for next iteration?
+
+        for radius in range(self.radius):
+            node_rep = F.dropout(F.relu(self.bn[radius](node_current+neighbor_current)), p=self.dropout, training=self.training)
+            fp, node_next = self.get_self(nz, node_rep, radius)
+            neighbor_next = self.get_neighbor_act(adjs_no_diag, node_current, edge_current, radius)
+            edge_next = self.conv[('edge', radius)](edge_current)
+            fps.append(fp)
+            node_current, neighbor_current, edge_current = node_next, neighbor_next, edge_next
+
+        fps = sum(fps)
+
+        return self.dense(fps)
 
         # adjs_afms = torch.mul(adjs_diag.unsqueeze(3).expand(-1, -1, -1, afms.size()[2]), afms.unsqueeze(1)).permute(
         #     0, 3, 1, 2)
-        # adjs_att = torch.cat((torch.mul(adjs_diag.unsqueeze(3).expand(-1, -1, -1, afms.size()[2]), afms.unsqueeze(1)).permute(
-        #     0, 3, 1, 2), bfts, OrderAtt, AromAtt, ConjAtt, RingAtt), dim=1)
-        # att = self.soft(self.att0(torch.cat((torch.mul(adjs_diag.unsqueeze(3).expand(-1, -1, -1, afms.size()[2]), afms.unsqueeze(1)).permute(
-        #     0, 3, 1, 2), bfts, OrderAtt, AromAtt, ConjAtt, RingAtt), dim=1)))
-        # att = torch.sum(self.soft(self.att0(torch.cat((torch.mul(adjs_diag.unsqueeze(3).expand(-1, -1, -1, afms.size()[2]), afms.unsqueeze(1)).permute(
-        #     0, 3, 1, 2), bfts, OrderAtt, AromAtt, ConjAtt, RingAtt), dim=1))), dim=3)
-        # fp0 = torch.sum(torch.bmm(torch.sum(self.soft(self.att0(torch.cat((torch.mul(adjs_diag.unsqueeze(3).expand(-1, -1, -1, afms.size()[2]), afms.unsqueeze(1)).permute(
-        #     0, 3, 1, 2), bfts, OrderAtt, AromAtt, ConjAtt, RingAtt), dim=1))), dim=3), afms), dim=2)
-        # fp0, hidden = self.rnn_forward(torch.sum(torch.bmm(torch.sum(self.soft(self.att0(torch.cat((torch.mul(adjs_diag.unsqueeze(3).expand(-1, -1, -1, afms.size()[2]), afms.unsqueeze(1)).permute(
-        #     0, 3, 1, 2), bfts, OrderAtt, AromAtt, ConjAtt, RingAtt), dim=1))), dim=3), afms), dim=2), self.init_hidden().expand(afms.size()[0], -1))
+        # adjs_att = torch.cat((adjs_afms, bfts, OrderAtt, AromAtt, ConjAtt, RingAtt), dim=1)
+        # att = self.soft(self.att0(adjs_att))
+        # att = torch.sum(att, dim=3)
+        # fp0 = torch.sum(torch.bmm(att, afms), dim=2)
+        # fp0, hidden = self.rnn_forward(fp0, self.init_hidden().expand(fp0.size()[0], -1))
+        #
         # fp0 = F.dropout(F.relu(self.bn(fp0)), p=self.dropout, training=self.training)
-
-
-        adjs_no_diag = torch.clamp(adjs - Variable(torch.eye(adjs.size()[1]).float()), min=0)
-        adjs_afms = torch.mul(adjs_no_diag.unsqueeze(3).expand(-1, -1, -1, afms.size()[2]), afms.unsqueeze(1)).permute(0, 3, 1, 2)
-        adjs_att = torch.cat((adjs_afms, bfts, OrderAtt, AromAtt, ConjAtt, RingAtt), dim=1)
-        att = self.soft(self.att1(adjs_att))
-        att = torch.sum(att, dim=3)
-        fp1 = torch.sum(torch.bmm(att, afms), dim=2)
-        fp1, hidden = self.rnn_forward(fp1, hidden)
-        fp1 = F.dropout(F.relu(self.bn(fp1)), p=self.dropout, training=self.training)
-
-        # fp1, hidden = self.rnn_forward(torch.sum(torch.bmm(torch.sum(self.soft(self.att0(
-        #     torch.cat((torch.mul(adjs_no_diag.unsqueeze(3).expand(-1, -1, -1, afms.size()[2]), afms.unsqueeze(1)).permute(
-        #         0, 3, 1, 2), bfts, OrderAtt, AromAtt, ConjAtt, RingAtt), dim=1))), dim=3), afms), dim=2),
-        #     self.init_hidden().expand(afms.size()[0], -1))
+        #
+        # # adjs_afms = torch.mul(adjs_diag.unsqueeze(3).expand(-1, -1, -1, afms.size()[2]), afms.unsqueeze(1)).permute(
+        # #     0, 3, 1, 2)
+        # # adjs_att = torch.cat((torch.mul(adjs_diag.unsqueeze(3).expand(-1, -1, -1, afms.size()[2]), afms.unsqueeze(1)).permute(
+        # #     0, 3, 1, 2), bfts, OrderAtt, AromAtt, ConjAtt, RingAtt), dim=1)
+        # # att = self.soft(self.att0(torch.cat((torch.mul(adjs_diag.unsqueeze(3).expand(-1, -1, -1, afms.size()[2]), afms.unsqueeze(1)).permute(
+        # #     0, 3, 1, 2), bfts, OrderAtt, AromAtt, ConjAtt, RingAtt), dim=1)))
+        # # att = torch.sum(self.soft(self.att0(torch.cat((torch.mul(adjs_diag.unsqueeze(3).expand(-1, -1, -1, afms.size()[2]), afms.unsqueeze(1)).permute(
+        # #     0, 3, 1, 2), bfts, OrderAtt, AromAtt, ConjAtt, RingAtt), dim=1))), dim=3)
+        # # fp0 = torch.sum(torch.bmm(torch.sum(self.soft(self.att0(torch.cat((torch.mul(adjs_diag.unsqueeze(3).expand(-1, -1, -1, afms.size()[2]), afms.unsqueeze(1)).permute(
+        # #     0, 3, 1, 2), bfts, OrderAtt, AromAtt, ConjAtt, RingAtt), dim=1))), dim=3), afms), dim=2)
+        # # fp0, hidden = self.rnn_forward(torch.sum(torch.bmm(torch.sum(self.soft(self.att0(torch.cat((torch.mul(adjs_diag.unsqueeze(3).expand(-1, -1, -1, afms.size()[2]), afms.unsqueeze(1)).permute(
+        # #     0, 3, 1, 2), bfts, OrderAtt, AromAtt, ConjAtt, RingAtt), dim=1))), dim=3), afms), dim=2), self.init_hidden().expand(afms.size()[0], -1))
+        # # fp0 = F.dropout(F.relu(self.bn(fp0)), p=self.dropout, training=self.training)
+        #
+        #
+        # adjs_no_diag = torch.clamp(adjs - Variable(torch.eye(adjs.size()[1]).float()), min=0)
+        # adjs_afms = torch.mul(adjs_no_diag.unsqueeze(3).expand(-1, -1, -1, afms.size()[2]), afms.unsqueeze(1)).permute(0, 3, 1, 2)
+        # adjs_att = torch.cat((adjs_afms, bfts, OrderAtt, AromAtt, ConjAtt, RingAtt), dim=1)
+        # att = self.soft(self.att1(adjs_att))
+        # att = torch.sum(att, dim=3)
+        # fp1 = torch.sum(torch.bmm(att, afms), dim=2)
+        # fp1, hidden = self.rnn_forward(fp1, hidden)
         # fp1 = F.dropout(F.relu(self.bn(fp1)), p=self.dropout, training=self.training)
-
-        # fp = self.bn(torch.cat((fp0, fp1), dim=1))
-
-        fp = torch.cat((fp0, fp1), dim=1)
-
-        x = self.den1(fp)
-        x = F.relu(self.bn_den1(x))
-        x = F.dropout(x, p=self.dropout, training=self.training)
-        x = self.den2(x)
-        x = F.relu(self.bn_den2(x))
-        x = self.den3(x)
-        return x
+        #
+        # # fp1, hidden = self.rnn_forward(torch.sum(torch.bmm(torch.sum(self.soft(self.att0(
+        # #     torch.cat((torch.mul(adjs_no_diag.unsqueeze(3).expand(-1, -1, -1, afms.size()[2]), afms.unsqueeze(1)).permute(
+        # #         0, 3, 1, 2), bfts, OrderAtt, AromAtt, ConjAtt, RingAtt), dim=1))), dim=3), afms), dim=2),
+        # #     self.init_hidden().expand(afms.size()[0], -1))
+        # # fp1 = F.dropout(F.relu(self.bn(fp1)), p=self.dropout, training=self.training)
+        #
+        # # fp = self.bn(torch.cat((fp0, fp1), dim=1))
+        #
+        # fp = torch.cat((fp0, fp1), dim=1)
+        #
+        # x = self.den1(fp)
+        # x = F.relu(self.bn_den1(x))
+        # x = F.dropout(x, p=self.dropout, training=self.training)
+        # x = self.den2(x)
+        # x = F.relu(self.bn_den2(x))
+        # x = self.den3(x)
+        # return x
 
 
 class Concate_GCN(nn.Module):
