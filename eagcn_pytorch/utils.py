@@ -727,14 +727,14 @@ def mol_collate_func_reg(batch):
         size_list.append(datum[0].shape[0])
     max_size = np.max(size_list) # max of batch. 55 for solu, 115 for lipo, 24 for freesolv
     #max_size = max_molsize #max_molsize 132
-    btf_len = datum[2].shape[0]
+    btf_len = 1 #datum[2].shape[0]
     # padding
     for datum in batch:
         filled_adj = np.zeros((max_size, max_size), dtype=np.float32)
         filled_adj[0:datum[0].shape[0], 0:datum[0].shape[0]] = datum[0]
         filled_afm = np.zeros((max_size, 25), dtype=np.float32)
         filled_afm[0:datum[0].shape[0], :] = datum[1]
-        filled_bft = np.zeros((btf_len, max_size, max_size), dtype=np.float32)
+        filled_bft = np.zeros((btf_len, max_size, max_size), dtype=np.int32)
         filled_bft[:, 0:datum[0].shape[0], 0:datum[0].shape[0]] = datum[2]
 
         filled_orderAtt = np.zeros((5, max_size, max_size), dtype=np.float32)
@@ -757,11 +757,11 @@ def mol_collate_func_reg(batch):
         conjAtt_list.append(filled_conjAtt)
         ringAtt_list.append(filled_ringAtt)
 
-    return ([np.array(adj_list), np.array(afm_list),
-             np.array(bft_list), np.array(orderAtt_list),
-             np.array(aromAtt_list), np.array(conjAtt_list),
-             np.array(ringAtt_list),
-             np.array(label_list)])
+    return ([from_numpy(np.array(adj_list)), from_numpy(np.array(afm_list)),
+             from_numpy(np.array(bft_list)), from_numpy(np.array(orderAtt_list)),
+             from_numpy(np.array(aromAtt_list)), from_numpy(np.array(conjAtt_list)),
+             from_numpy(np.array(ringAtt_list)),
+             from_numpy(np.array(label_list))])
 
     # if use_cuda:
     #     return ([torch.from_numpy(np.array(adj_list)).cuda(), torch.from_numpy(np.array(afm_list)).cuda(),
@@ -782,26 +782,26 @@ def mol_collate_func_class(batch):
     afm_list =[]
     label_list = []
     size_list = []
-    # bft_list = []
+    bft_list = []
     orderAtt_list, aromAtt_list, conjAtt_list, ringAtt_list = [], [], [], []
 
     for datum in batch:
         label_list.append(datum[7])
         size_list.append(datum[0].shape[0])
     max_size = np.max(size_list) # max of batch    222 for hiv, 132 for tox21,
-    # btf_len = datum[2].shape[0]
+    btf_len = 1 #datum[2].shape[0]
     atf_len = datum[1].shape[1]
     #max_size = max_molsize #max_molsize 132
     # padding
     for datum in batch:
         filled_adj = np.zeros((max_size, max_size), dtype=np.float32)
         filled_adj[0:datum[0].shape[0], 0:datum[0].shape[0]] = datum[0]
-        # filled_afm = np.zeros((max_size, 25), dtype=np.float32)
+        filled_afm = np.zeros((max_size, 25), dtype=np.float32)
         # Originally the number of atom features is set at 25
         filled_afm = np.zeros((max_size, atf_len), dtype=np.float32)
         filled_afm[0:datum[0].shape[0], :] = datum[1]
-        # filled_bft = np.zeros((btf_len, max_size, max_size), dtype=np.float32)
-        # filled_bft[:, 0:datum[0].shape[0], 0:datum[0].shape[0]] = datum[2]
+        filled_bft = np.zeros((btf_len, max_size, max_size), dtype=np.int32)
+        filled_bft[:, 0:datum[0].shape[0], 0:datum[0].shape[0]] = datum[2]
 
         filled_orderAtt = np.zeros((5, max_size, max_size), dtype=np.float32)
         filled_orderAtt[:, 0:datum[0].shape[0], 0:datum[0].shape[0]] = datum[3]
@@ -817,17 +817,17 @@ def mol_collate_func_class(batch):
 
         adj_list.append(filled_adj)
         afm_list.append(filled_afm)
-        # bft_list.append(filled_bft)
+        bft_list.append(filled_bft)
         orderAtt_list.append(filled_orderAtt)
         aromAtt_list.append(filled_aromAtt)
         conjAtt_list.append(filled_conjAtt)
         ringAtt_list.append(filled_ringAtt)
 
-    return ([np.array(adj_list), np.array(afm_list),
-             None, np.array(orderAtt_list),
-             np.array(aromAtt_list), np.array(conjAtt_list),
-             np.array(ringAtt_list),
-             np.array(label_list)])
+    return ([from_numpy(np.array(adj_list)), from_numpy(np.array(afm_list)),
+             from_numpy(np.array(bft_list)), from_numpy(np.array(orderAtt_list)),
+             from_numpy(np.array(aromAtt_list)), from_numpy(np.array(conjAtt_list)),
+             from_numpy(np.array(ringAtt_list)),
+             from_numpy(np.array(label_list))])
 
     # if use_cuda:
     #     return ([torch.from_numpy(np.array(adj_list)).cuda(), torch.from_numpy(np.array(afm_list)).cuda(),
@@ -898,12 +898,25 @@ def set_weight(y_all):
 def weights_init(m):
     classname = m.__class__.__name__
     if classname.find('Conv') != -1:
+        # m.weight.data.fill_(1.0)
         m.weight.data.normal_(0.0, 0.02)
-    elif classname.find('BatchNorm') != -1:
+        return
+    if classname.find('BatchNorm') != -1:
         m.weight.data.normal_(1.0, 0.02)
+        # m.weight.data.fill_(1.0)
         m.bias.data.fill_(0)
-    if classname.find('Conv2d') != -1:
-        m.weight.data.fill_(1.0)
+        return
+    # if classname.find('Conv') != -1:
+    #     m.weight.data.fill_(1.0)
+    if classname.find('Embedding') != -1:
+        # m.weight.data.fill_(1.0)
+        m.weight.data.normal_(0.0, 0.02)
+        return
+    if classname.find('Linear') != -1:
+        # m.weight.data.fill_(1.0)
+        m.weight.data.normal_(0.0, 0.02)
+        m.bias.data.fill_(0)
+        return
 
 def rsquared(x, y):
     """ Return R^2 where x and y are array-like."""

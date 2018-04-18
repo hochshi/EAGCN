@@ -65,6 +65,7 @@ early_stop_diff = 0.11
 
 experiment_date = strftime("%b_%d_%H:%M", gmtime()) + 'N'
 print(experiment_date)
+torch.manual_seed(random_state)
 use_cuda = torch.cuda.is_available()
 FloatTensor = torch.cuda.FloatTensor if use_cuda else torch.FloatTensor
 LongTensor = torch.cuda.LongTensor if use_cuda else torch.LongTensor
@@ -669,6 +670,58 @@ def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
 
+def embed_afm(afm, node_to_ix, node_word_len):
+    nodes = afm[:, 0:node_word_len].astype(np.int8).tolist()
+    nodes = ["".join([str(i) for i in word]) for word in nodes]
+    nodes = np.array([[node_to_ix[key]] for key in nodes])
+    remaining_node_attributes = afm[:, node_word_len:]
+    return np.concatenate((nodes, remaining_node_attributes), axis=1)
+
+def embed_bonds(adj, orderAtt, aromAtt, conjAtt, ringAtt, edge_to_ix, edge_word_len):
+    nz = (0 != adj.reshape(-1))
+    edge_data = np.concatenate((orderAtt, aromAtt, conjAtt, ringAtt), axis=0).transpose(1, 2, 0)
+    edges = edge_data.astype(np.int8).reshape(-1, edge_word_len)[nz].tolist()
+    edges = ["".join([str(i) for i in word]) for word in edges]
+    edges = np.array([edge_to_ix[key] for key in edges])
+    new_edges = np.zeros(nz.shape, dtype=np.float32)
+    new_edges[nz] = edges
+    return new_edges.reshape(adj.shape)
+
+
+def embed_data(x_all, edge_vocab, node_vocab):
+    edge_to_ix = {edge: i for i, edge in enumerate(edge_vocab)}
+    edge_word_len = len(list(edge_to_ix.keys())[0])
+
+    node_to_ix = {node: i for i, node in enumerate(node_vocab)}
+    node_word_len = len(list(node_to_ix.keys())[0])
+
+
+    afm_pos, adj_pos, bfm_pos, orderAtts_pos, aromAtts_pos, conjAtts_pos, ringAtts_pos = 0, 1, 2, 3, 4, 5, 6
+
+    for x in x_all:
+        new_bfm = embed_bonds(x[adj_pos], x[orderAtts_pos], x[aromAtts_pos], x[conjAtts_pos], x[ringAtts_pos],
+                              edge_to_ix, edge_word_len)
+        new_afm = embed_afm(x[afm_pos], node_to_ix, node_word_len)
+        x[afm_pos] = new_afm
+        x[bfm_pos] = new_bfm
+
+    return (x_all, edge_to_ix, edge_word_len, node_to_ix, node_word_len)
+
+
+def embed_edges(adjs, bfts):
+    nz = adjs.view(-1).byte()
+    return torch.masked_select(bfts.view(-1), nz).long()
+
+
+def embed_nodes(adjs, afms):
+    nz, _ = adjs.max(dim=2)
+    nz = nz.view(-1).byte()
+    return (
+        afms.view(-1, afms.shape[-1])[nz.unsqueeze(1).expand(-1, 2)].view(-1, afms.shape[-1])[:,0].long(),
+        afms.view(-1, afms.shape[2])[:, 1:]
+    )
+
+
 def test_model(loader, model, tasks, calcpos=False):
     """
     Help function that tests the model's performance on a dataset
@@ -685,7 +738,10 @@ def test_model(loader, model, tasks, calcpos=False):
         # orderAtt_batch, aromAtt_batch, conjAtt_batch, ringAtt_batch = Variable(orderAtt), Variable(aromAtt), Variable(
         #     conjAtt), Variable(ringAtt)
         # outputs = model(adj_batch, afm_batch, btf_batch, orderAtt_batch, aromAtt_batch, conjAtt_batch, ringAtt_batch)
-        outputs = model(adj, afm, btf, orderAtt, aromAtt, conjAtt, ringAtt)
+        # outputs = model(adj, afm, btf, orderAtt, aromAtt, conjAtt, ringAtt)
+        afm, axfm = embed_nodes(adj, afm)
+        btf = embed_edges(adj, btf)
+        outputs = model(Variable(adj), Variable(afm), Variable(axfm), Variable(btf))
         if calcpos:
             smprobs = F.log_softmax(outputs, dim=1)
             labels_pos = np.array(torch.sum(
@@ -738,10 +794,12 @@ def test_model(loader, model, tasks, calcpos=False):
 
 
 def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
-    x_all, y_all, target, sizes, mol_to_graph_transform, parameter_holder, edge_words, node_words = load_data(dataset)
+    x_all, y_all, target, sizes, mol_to_graph_transform, parameter_holder, edge_vocab, node_vocab = load_data(dataset)
     max_size = max(sizes)
     x_all, y_all = data_filter(x_all, y_all, target, sizes, tasks)
     x_all, y_all = shuffle(x_all, y_all, random_state=random_state)
+
+    x_all, edge_to_ix, edge_word_len, node_to_ix, node_word_len = embed_data(x_all, edge_vocab, node_vocab)
 
     if mol_to_graph_transform is not None:
         X, x_test, y, y_test = train_test_split(x_all, y_all, test_size=0.1, random_state=random_state, stratify=y_all)
@@ -763,13 +821,14 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
         n_bfeat = 0 # parameter_holder.n_bfeat
 
     model = Shi_GCN(n_bfeat=n_bfeat, n_afeat=n_afeat,
-                            n_sgc1_1=n_sgc1_1, n_sgc1_2=n_sgc1_2, n_sgc1_3=n_sgc1_3, n_sgc1_4=n_sgc1_4,
-                            n_sgc1_5=n_sgc1_5,
-                            n_sgc2_1=n_sgc2_1, n_sgc2_2=n_sgc2_2, n_sgc2_3=n_sgc2_3, n_sgc2_4=n_sgc2_4,
-                            n_sgc2_5=n_sgc2_5,
-                            n_den1=n_den1, n_den2=n_den2,
-                            nclass=len(tasks), dropout=dropout,
-                    edge_vocab=edge_words, node_vocab=node_words)
+                    n_sgc1_1=n_sgc1_1, n_sgc1_2=n_sgc1_2, n_sgc1_3=n_sgc1_3, n_sgc1_4=n_sgc1_4,
+                    n_sgc1_5=n_sgc1_5,
+                    n_sgc2_1=n_sgc2_1, n_sgc2_2=n_sgc2_2, n_sgc2_3=n_sgc2_3, n_sgc2_4=n_sgc2_4,
+                    n_sgc2_5=n_sgc2_5,
+                    n_den1=n_den1, n_den2=n_den2,
+                    nclass=len(tasks), dropout=dropout,
+                    edge_to_ix=edge_to_ix, edge_word_len=edge_word_len, node_to_ix=node_to_ix,
+                    node_word_len=node_word_len)
 
     # if EAGCN_structure == 'concate':
     #     model = Concate_GCN(n_bfeat=n_bfeat, n_afeat=n_afeat,
@@ -829,13 +888,17 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
             #     aromAtt), Variable(
             #     conjAtt), Variable(ringAtt)
             optimizer.zero_grad()
+            model.zero_grad()
             # outputs = model(adj_batch, afm_batch, btf_batch, orderAtt_batch, aromAtt_batch, conjAtt_batch,
             #                 ringAtt_batch)
             # outputs = model(Variable(adj), Variable(afm), Variable(btf), Variable(orderAtt), Variable(aromAtt),
             #                 Variable(conjAtt),
             #                 Variable(ringAtt))
-            outputs = model(adj, afm, btf, orderAtt, aromAtt, conjAtt, ringAtt)
-            labels = Variable(from_numpy(labels).float())
+            afm, axfm = embed_nodes(adj, afm)
+            btf = embed_edges(adj, btf)
+            outputs = model(Variable(adj), Variable(afm), Variable(axfm), Variable(btf))
+            # outputs = model(Variable(adj), Variable(afm), Variable(btf), Variable(orderAtt), Variable(aromAtt), Variable(conjAtt), Variable(ringAtt))
+            labels = Variable(labels.float())
             non_nan_num = ((labels == 1).sum() + (labels == 0).sum()).float()
             weights = Variable(weight_tensor(BCE_weight, labels=labels))
             if calcpos:
@@ -844,9 +907,16 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
             else:
                 loss = F.binary_cross_entropy_with_logits(outputs.view(-1), labels.float().view(-1), weight=weights,
                                                           size_average=False)
-                loss = loss / non_nan_num
+                # loss = F.binary_cross_entropy_with_logits(outputs.view(-1), labels.float().view(-1), weight=weights,
+                #                                           size_average=True)
+                # loss = loss / non_nan_num
+
+            # model.print_embed_weights()
+            # print('Loss: {}'.format(loss.data[0]))
             loss.backward()
+            # model.print_embed_weights()
             optimizer.step()
+            # model.print_embed_weights()
 
         # report performance
         if True:
