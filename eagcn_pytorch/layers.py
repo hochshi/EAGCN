@@ -13,8 +13,9 @@ import torch.nn.functional as F
 from torch.nn.modules.module import Module
 from torch.nn.modules.utils import _single, _pair, _triple
 from torch.autograd import Variable
+from utils import use_cuda
 
-use_cuda = torch.cuda.is_available()
+# use_cuda = torch.cuda.is_available()
 FloatTensor = torch.cuda.FloatTensor if use_cuda else torch.FloatTensor
 LongTensor = torch.cuda.LongTensor if use_cuda else torch.LongTensor
 IntTensor = torch.cuda.IntTensor if use_cuda else torch.IntTensor

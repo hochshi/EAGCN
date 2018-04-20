@@ -6,7 +6,7 @@ import torch
 from torch.autograd import Variable
 from fractions import gcd
 
-use_cuda = torch.cuda.is_available()
+# use_cuda = torch.cuda.is_available()
 FloatTensor = torch.cuda.FloatTensor if use_cuda else torch.FloatTensor
 LongTensor = torch.cuda.LongTensor if use_cuda else torch.LongTensor
 IntTensor = torch.cuda.IntTensor if use_cuda else torch.IntTensor
@@ -18,8 +18,8 @@ class Shi_GCN(nn.Module):
     def __init__(self, n_bfeat, n_afeat, n_sgc1_1, n_sgc1_2, n_sgc1_3, n_sgc1_4, n_sgc1_5,
                  n_sgc2_1, n_sgc2_2, n_sgc2_3, n_sgc2_4, n_sgc2_5,
                  n_den1, n_den2,
-                 nclass, dropout, edge_to_ix, edge_word_len, node_to_ix, node_word_len, use_att = True, molfp_mode = 'sum', hidden_size=50, radius=1,
-                 edge_embedding_dim = 10, node_embedding_dim = 10):
+                 nclass, dropout, edge_to_ix, edge_word_len, node_to_ix, node_word_len, use_att = True, molfp_mode = 'sum', hidden_size=50, radius=3,
+                 edge_embedding_dim = 5, node_embedding_dim = 5):
         super(Shi_GCN, self).__init__()
 
         self.ngc1 = n_sgc1_1 + n_sgc1_2 + n_sgc1_3 + n_sgc1_4 + n_sgc1_5
@@ -37,8 +37,8 @@ class Shi_GCN(nn.Module):
         self.node_word_len = node_word_len
         self.node_embed_len = node_embedding_dim
         self.node_attr_len = n_afeat - self.node_word_len + self.node_embed_len
-        self.edge_embeddings = nn.Embedding(len(edge_to_ix), edge_embedding_dim, max_norm=edge_embedding_dim)
-        self.node_embeddings = nn.Embedding(len(node_to_ix), node_embedding_dim, max_norm=edge_embedding_dim)
+        self.edge_embeddings = nn.Embedding(len(edge_to_ix), edge_embedding_dim)
+        self.node_embeddings = nn.Embedding(len(node_to_ix), node_embedding_dim)
         self.edge_bn = nn.BatchNorm2d(edge_embedding_dim)
         self.node_bn = nn.BatchNorm1d(self.node_attr_len)
 
@@ -46,11 +46,11 @@ class Shi_GCN(nn.Module):
         self.bn = {}
 
         for rad in range(self.radius):
-            # setattr(self, '_'.join(('conv', 'self', str(rad))),
-            #         nn.Conv1d(self.node_attr_len, self.node_attr_len, kernel_size=1,
-            #                   stride=1, padding=0, dilation=1, groups=1,
-            #                   bias=True))
-            # self.conv[('self', rad)] = getattr(self, '_'.join(('conv', 'self', str(rad))))
+            setattr(self, '_'.join(('conv', 'node', str(rad))),
+                    nn.Conv1d(self.node_attr_len, self.node_attr_len, kernel_size=1,
+                              stride=1, padding=0, dilation=1, groups=1,
+                              bias=True))
+            self.conv[('node', rad)] = getattr(self, '_'.join(('conv', 'node', str(rad))))
 
             setattr(self, '_'.join(('conv', 'out', str(rad))), nn.Conv1d(self.node_attr_len, ngc1, kernel_size=1,
                                                                          stride=1, padding=0, dilation=1,
@@ -64,35 +64,35 @@ class Shi_GCN(nn.Module):
                                                                               padding=0, dilation=1, groups=1, bias=True))
             self.conv[('neighbor', rad)] = getattr(self, '_'.join(('conv', 'neighbor', str(rad))))
 
-            # setattr(self, '_'.join(('conv', 'edge', str(rad))), nn.Conv2d(self.edge_embed_len, self.edge_embed_len,
-            #                                                               kernel_size=1, stride=1, padding=0,
-            #                                                               dilation=1,
-            #                                                               groups=1, bias=True))
-            # self.conv[('edge', rad)] = getattr(self, '_'.join(('conv', 'edge', str(rad))))
+            setattr(self, '_'.join(('conv', 'edge', str(rad))), nn.Conv2d(self.edge_embed_len, self.edge_embed_len,
+                                                                          kernel_size=1, stride=1, padding=0,
+                                                                          dilation=1,
+                                                                          groups=1, bias=True))
+            self.conv[('edge', rad)] = getattr(self, '_'.join(('conv', 'edge', str(rad))))
 
             setattr(self, '_'.join(('bn', str(rad))), nn.BatchNorm1d(self.node_attr_len))
             self.bn[rad] = getattr(self, '_'.join(('bn', str(rad))))
 
+        self.molfp_mode = molfp_mode
         if 'sum' == molfp_mode:
-            self.fp_func = sum
             self.out_bn = nn.BatchNorm1d(ngc1)
             self.dense = nn.Linear(ngc1, nclass)
         else:
-            self.fp_func = lambda x: torch.cat(x, dim=1)
             self.out_bn = nn.BatchNorm1d(self.radius*ngc1)
             self.dense = nn.Linear(self.radius*ngc1, nclass)
 
         self.out_softmax = nn.Softmax(dim=1)
         self.dropout = dropout
 
+    def fp_func(self, x):
+        if 'sum' == self.molfp_mode:
+            return sum(x)
+        return torch.cat(x, dim=1)
+
     def embed_edges(self, adjs, bfts):
         nz = adjs.view(-1).byte()
         new_edges = Variable(from_numpy(np.zeros(nz.shape + (self.edge_embed_len,))).float())
-        new_edges[nz.unsqueeze(1).expand(-1, self.edge_embed_len)] = self.edge_embeddings(
-            bfts
-            # torch.masked_select(bfts.view(-1), nz).long()
-            # bfts.view(-1)[nz].long()
-        ).view(-1)
+        new_edges[nz.unsqueeze(1).expand(-1, self.edge_embed_len)] = self.edge_embeddings(bfts).view(-1)
         new_edges = F.tanh(self.edge_bn(new_edges.view(adjs.shape + (-1,)).permute(0, 3, 1, 2)))
         return F.dropout(
             torch.mul(new_edges, adjs.unsqueeze(1).expand(-1, self.edge_embed_len, -1, -1)),
@@ -100,41 +100,11 @@ class Shi_GCN(nn.Module):
             training=self.training
         )
 
-        # nz = (0 != adjs.reshape(-1))
-        # nz = (0 != adjs.view(-1))
-        # # edge_data = np.concatenate((OrderAtt, AromAtt, ConjAtt, RingAtt), axis=1).transpose(0, 2, 3, 1)
-        # edge_data = torch.cat((OrderAtt, AromAtt, ConjAtt, RingAtt), dim=1).permute(0, 2, 3, 1)
-        # # edges = edge_data.astype(np.int8).reshape(-1, self.edge_word_len)[nz].tolist()
-        # edges = edge_data.byte().view(-1, self.edge_word_len)[nz]
-        #
-        # edges = ["".join([str(i) for i in word]) for word in edges]
-        # edges = self.edge_embeddings(Variable(LongTensor([self.edge_to_ix[key] for key in edges])))
-        # new_edges = Variable(from_numpy(np.zeros(nz.shape + (self.edge_embed_len,))).float())
-        # new_edges[nz.nonzero()] = edges
-        # return new_edges.view(edge_data.shape[0:3] + (-1,)).permute(0, 3, 1, 2)
-
-        # edge_data = torch.cat((OrderAtt, AromAtt, ConjAtt, RingAtt), dim=1).permute(0, 2, 3, 1)
-        # edges = edge_data.numpy().astype(np.int8).reshape(-1, self.edge_word_len).tolist()
-        # edges = ["".join([str(i) for i in word]) for word in edges]
-        # edges = self.edge_embeddings(Variable(LongTensor([self.edge_to_ix[key] for key in edges])))
-        # return edges.view(edge_data.size()[0:3] + (-1,)).permute(0, 3, 1, 2)
-        # nz = (0 != adjs)
-        # edges = edge_data[nz.unsqueeze(3).expand(-1, -1, -1, edge_data.size()[3])].numpy().astype(np.int8).reshape(-1, self.edge_word_len).tolist()
-        # edges = ["".join([str(i) for i in word]) for word in edges]
-        # edges = self.edge_embeddings(Variable(torch.LongTensor([self.edge_to_ix[key] for key in edges])))
-        # edge_data = Variable(FloatTensor(adjs.size() + (self.edge_embed_len,)))
-        # edge_data.zero_()
-        # edge_data[nz.unsqueeze(3).expand(-1, -1, -1, edge_data.size()[3])] = edges
-        # return edge_data.permute(0, 3, 1, 2)
-
     def embed_nodes(self, adjs, afms, axfms):
         nz, _ = adjs.max(dim=2)
         nz = nz.view(-1).byte()
         new_nodes = Variable(from_numpy(np.zeros(nz.shape + (self.node_embed_len,))).float())
-        new_nodes[nz.unsqueeze(1).expand(-1, self.node_embed_len)] = self.node_embeddings(
-            afms
-            # afms.view(-1, afms.shape[-1])[nz.unsqueeze(1).expand(-1, 2)].view(-1, afms.shape[-1])[:, 0].long()
-        ).view(-1)
+        new_nodes[nz.unsqueeze(1).expand(-1, self.node_embed_len)] = self.node_embeddings(afms).view(-1)
 
         new_nodes = torch.cat((new_nodes, axfms), dim=1)
         new_nodes = F.tanh(self.node_bn(new_nodes.view(adjs.shape[0:-1] + (-1,)).permute(0, 2, 1)))
@@ -145,63 +115,27 @@ class Shi_GCN(nn.Module):
             training=self.training
         )
 
-        # new_nodes = self.node_embeddings(
-        #     afms.view(-1, afms.shape[-1])[nz.unsqueeze(1).expand(-1, 2)].view(-1, afms.shape[-1])[:, 0].long())
-        # return torch.cat((new_nodes, ))
-        #
-        #
-        # nz = (0 != adjs.max(axis=2).reshape(-1))
-        # nodes = afms.reshape(-1, afms.shape[-1])[nz][:, 0:self.node_word_len].astype(np.int8).tolist()
-        # nodes = ["".join([str(i) for i in word]) for word in nodes]
-        # nodes = self.node_embeddings(Variable(LongTensor([self.node_to_ix[key] for key in nodes])))
-        # new_nodes = Variable(from_numpy(np.zeros(nz.shape + (self.node_embed_len,))).float())
-        # new_nodes[nz.nonzero()] = nodes
-        # remaining_node_attributes = Variable(from_numpy(afms.reshape(-1, afms.shape[2])[:, self.node_word_len:]))
-        # return torch.cat((new_nodes, remaining_node_attributes), dim=1).view(afms.shape[0:-1] + (-1,))
-
-        # nodes = afms.astype(np.int8).reshape(-1, afms.shape[2])[:, 0:self.node_word_len].tolist()
-        # nodes = ["".join([str(i) for i in word]) for word in nodes]
-        # nodes = self.node_embeddings(Variable(LongTensor([self.node_to_ix[key] for key in nodes])))
-        # remaining_node_attributes = Variable(from_numpy(afms.reshape(-1, afms.shape[2])[:, self.node_word_len:]))
-        # return torch.cat((nodes, remaining_node_attributes), dim=1).view(afms.shape[0:-1] + (-1,))
-
-        # nodes = afms.astype(np.int8).reshape(-1, afms.size()[2])[:, 0:self.node_word_len].tolist()
-        # nodes = ["".join([str(i) for i in word]) for word in nodes]
-        # nodes = self.node_embeddings(Variable(LongTensor([self.node_to_ix[key] for key in nodes])))
-        # remaining_node_attributes = Variable(afms.view(-1, afms.size()[2])[:, self.node_word_len:])
-        # return torch.cat((nodes, remaining_node_attributes), dim=1).view(afms.size()[0:-1] + (-1,))
-
-        # nz, _ = adjs.max(dim=2, keepdim=True)
-        # nz = (0 != nz)
-        # # nz[:, :, self.node_word_len:] = 0
-        # # nz = (0 != nz).unsqueeze(2).expand(-1, -1, afms.size()[2])
-        # # nz[:, :, self.node_word_len:] = 0
-        # nodes = afms[nz.expand(-1, -1, afms.size()[2])].numpy().astype(np.int8).reshape(-1, afms.size()[2])[:, 0:self.node_word_len].tolist()
-        # nodes = ["".join([str(i) for i in word]) for word in nodes]
-        # nodes = self.node_embeddings(Variable(torch.LongTensor([self.node_to_ix[key] for key in nodes])))
-        #
-        # node_data = FloatTensor(afms.size()[0:2] + (self.node_embed_len,))
-        # node_data.zero_()
-        # node_data[nz.expand(-1, -1, self.node_embed_len)] = nodes
-        # return Variable(torch.cat((node_data, afms[:, :, self.node_word_len:]), dim=2))
-
     def get_self(self, nz, node_data, layer):
         return (
-            self.get_self_out(nz, node_data, self.conv[('out', layer)]),
-            node_data # self.get_self_act(nz, node_data, self.conv[('self', layer)])
+            self.get_self_out(nz, node_data, layer),
+            node_data # self.get_self_act(nz, node_data, layer)
         )
 
-    def get_self_out(self, nz, node_data, conv):
-        layer = conv(node_data)
-        layer = torch.mul(layer, nz.unsqueeze(1).expand(-1, self.ngc1, -1))
-        layer = torch.sum(layer, dim=2)
-        # return self.out_softmax(layer)
-        return F.relu(layer)
+    def get_node_activation(self, nz, node_data, layer):
+        out = self.conv[('out', layer)](node_data)
+        out = torch.mul(out, nz.unsqueeze(1).expand(-1, self.ngc1, -1))
+        out = torch.sum(out, dim=2)
+        return F.relu(out)
 
-    def get_self_act(self, nz, node_data, conv):
-        layer = conv(node_data)
-        layer = torch.mul(layer, nz.unsqueeze(1).expand(-1, self.node_attr_len, -1))
-        return layer # torch.sum(layer, dim=2)
+    def get_next_node(self, nz, node_data, layer):
+        out = self.conv[('node', layer)](node_data)
+        out = torch.mul(out, nz.unsqueeze(1).expand(-1, self.node_attr_len, -1))
+        return out
+
+    def get_next_edge(self, adj, edge_data, layer):
+        out = self.conv[('edge', layer)](edge_data)
+        out = torch.mul(adj.unsqueeze(1).expand(-1, self.edge_embed_len, -1, -1), out)
+        return out
 
     def get_neighbor_act(self, adj_mat, node_data, edge_data, layer):
         lna = torch.mul(adj_mat.unsqueeze(1).expand(-1, self.node_attr_len, -1, -1), node_data.unsqueeze(3))
@@ -232,9 +166,7 @@ class Shi_GCN(nn.Module):
     def train(self, mode=True):
         super(Shi_GCN, self).train(mode=mode)
 
-    # def forward(self, adjs, afms, bfts, OrderAtt, AromAtt, ConjAtt, RingAtt):  # bfts
     def forward(self, adjs, afms, axfms, bfts):  # bfts
-        # adjs = Variable(from_numpy(adjs))
         edge_data = self.embed_edges(adjs, bfts)
         node_data = self.embed_nodes(adjs, afms, axfms)
 
@@ -245,32 +177,35 @@ class Shi_GCN(nn.Module):
         fps = []
 
         node_current = node_data
-        neighbor_current = torch.zeros_like(node_data)
         edge_current = edge_data
         adj_mat = adjs_no_diag
         adj_mats = []
 
-        #TODO: Should we create edge_next for next iteration?
+        # TODO: Should we conv edge_data (edge_current) for next iteration?
+        # TODO: Should we conv node_data (node_current) for next iteration?
 
-        node_rep = node_current
+        # node_rep = node_current
         for radius in range(self.radius):
-            # node_rep = F.dropout(F.relu(self.bn[radius](node_current + neighbor_current)), p=self.dropout,
-            #                      training=self.training)
-            # node_rep = F.dropout(F.relu(node_current + neighbor_current), p=self.dropout, training=self.training)
-            # node_rep = F.relu(self.bn[radius](node_current + neighbor_current))
-            fp, node_next = self.get_self(nz, node_rep, radius)
-            neighbor_next = self.get_neighbor_act(adj_mat, node_current, edge_current, radius)
+            fp = self.get_node_activation(nz, node_current, radius)
+            fps.append(fp)
+
+            node_next = self.get_next_node(nz, node_current, radius) # node_current
+            neighbor_next = self.get_neighbor_act(adj_mat, node_current, edge_current, radius) # get neighbor activation
+            node_next = torch.mul(node_next, neighbor_next)
+
             # edge_next = self.conv[('edge', radius)](edge_current)
             # edge_next = edge_current
+            # multiply by the adj. mat to get the edges which are
             edge_next = torch.matmul(adj_mat.unsqueeze(1).expand((-1, self.edge_embed_len, -1, -1)), edge_data)
             adj_mats.append(adj_mat)
             adj_mat = self.next_radius_adj_mat(adj_mat, adj_mats)
-            fps.append(fp)
-            node_current, neighbor_current, edge_current = node_next, neighbor_next, edge_next
-            # node_rep = node_current + neighbor_current
-            node_rep = torch.mul(node_current, neighbor_current)
+            edge_next = self.get_next_edge(adj_mat, edge_next, radius)
 
-        fps = sum(fps)
+            node_current, edge_current = node_next, edge_next
+            # node_rep = node_current + neighbor_current
+            # node_rep = torch.mul(node_current, neighbor_current)
+
+        fps = self.fp_func(fps)
 
         fps = self.out_bn(fps)
 

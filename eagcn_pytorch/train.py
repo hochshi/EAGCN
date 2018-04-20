@@ -29,7 +29,7 @@ write_file = True
 n_den1, n_den2 = 64, 32
 
 if dataset == 'tox21':
-    n_sgc1_1, n_sgc1_2, n_sgc1_3, n_sgc1_4, n_sgc1_5 = 30, 10, 10, 10, 10
+    n_sgc1_1, n_sgc1_2, n_sgc1_3, n_sgc1_4, n_sgc1_5 = 10, 10, 10, 10, 10
     n_sgc2_1, n_sgc2_2, n_sgc2_3, n_sgc2_4, n_sgc2_5 = 60, 20, 20, 20, 20
     batch_size = 256
     weight_decay = 0.0001  # L-2 Norm
@@ -37,8 +37,16 @@ if dataset == 'tox21':
     random_state = 2
     num_epochs = 80
     learning_rate = 0.0005
+
+    def output_transform(x):
+        return x
+
+    def loss_func(outputs, labels, weights):
+        return F.binary_cross_entropy_with_logits(outputs.view(-1), labels.float().view(-1), weight=weights,
+                                                  size_average=False)
+
 if dataset == 'hiv':
-    n_sgc1_1, n_sgc1_2, n_sgc1_3, n_sgc1_4, n_sgc1_5 = 30, 10, 10, 10, 10
+    n_sgc1_1, n_sgc1_2, n_sgc1_3, n_sgc1_4, n_sgc1_5 = 10, 10, 10, 10, 10
     n_sgc2_1, n_sgc2_2, n_sgc2_3, n_sgc2_4, n_sgc2_5 = 60, 20, 20, 20, 20
     batch_size = 64
     weight_decay = 0.00001  # L-2 Norm
@@ -46,8 +54,15 @@ if dataset == 'hiv':
     random_state = 1
     num_epochs = 50
     learning_rate = 0.0005
+
+    def output_transform(x):
+        return F.log_softmax(x, dim=1)
+
+    def loss_func(outputs, labels, weights):
+        return nn.NLLLoss()(outputs, labels.squeeze(1).long())
+
 if dataset == 'pubchem_chembl':
-    n_sgc1_1, n_sgc1_2, n_sgc1_3, n_sgc1_4, n_sgc1_5 = 30, 10, 10, 10, 10
+    n_sgc1_1, n_sgc1_2, n_sgc1_3, n_sgc1_4, n_sgc1_5 = 10, 10, 10, 10, 10
     n_sgc2_1, n_sgc2_2, n_sgc2_3, n_sgc2_4, n_sgc2_5 = 60, 20, 20, 20, 20
     # batch_size = 16384
     batch_size = 128
@@ -66,7 +81,7 @@ early_stop_diff = 0.11
 experiment_date = strftime("%b_%d_%H:%M", gmtime()) + 'N'
 print(experiment_date)
 torch.manual_seed(random_state)
-use_cuda = torch.cuda.is_available()
+# use_cuda = torch.cuda.is_available()
 FloatTensor = torch.cuda.FloatTensor if use_cuda else torch.FloatTensor
 LongTensor = torch.cuda.LongTensor if use_cuda else torch.LongTensor
 IntTensor = torch.cuda.IntTensor if use_cuda else torch.IntTensor
@@ -80,6 +95,7 @@ if dataset == 'tox21':
                  'NR-PPAR-gamma', 'SR-ARE', 'SR-ATAD5', 'SR-HSE', 'SR-MMP', 'SR-p53']
 if dataset == 'hiv':
     all_tasks = ['HIV_active']
+    calcpos = True
 if dataset == 'pubchem_chembl':
     # all_tasks = ['AADAT','ABAT','ABCB1','ABCB1A','ABCB1B','ABCC1','ABCC8','ABCC9','ABCG2','ABHD6','ABL1','ACACA','ACACB','ACE','ACE2','ACHE','ACKR3','ACLY','ACOX1','ACP1','ACR','ACVR1','ADA','ADAM10','ADAM17','ADAMTS4','ADAMTS5','ADCY1','ADCY5','ADK','ADM','ADORA1','ADORA2A','ADORA2B','ADORA3','ADRA1A','ADRA1B','ADRA1D','ADRA2A','ADRA2B','ADRA2C','ADRB1','ADRB2','ADRB3','ADRBK1','AGER','AGPAT2','AGTR1','AGTR1A','AGTR1B','AGTR2','AHCY','AHR','AKP3','AKR1B1','AKR1B10','AKR1C1','AKR1C3','AKT1','AKT2','AKT3','ALB','ALDH1A1','ALDH2','ALDH3A1','ALK','ALKBH3','ALOX12','ALOX15','ALOX15B','ALOX5','ALOX5AP','ALPI','ALPL','ALPPL2','AMD1','AMPD2','AMPD3','ANPEP','AOC3','APAF1','APEX1','APLNR','APOB','APOBEC3A','APOBEC3F','APOBEC3G','APP','AR','ASAH1','ASIC3','ATAD5','ATG4B','ATM','ATR','ATXN2','AURKA','AURKB','AURKC','AVPR1A','AVPR1B','AVPR2','AXL','BACE1','BACE2','BAD','BAP1','BAZ2B','BCHE','BCL2','BCL2A1','BCL2A1A','BCL2L1','BDKRB1','BDKRB2','BIRC2','BIRC3','BIRC5','BLM','BMP1','BMP4','BRAF','BRCA1','BRD2','BRD3','BRD4','BRS3','BTK','C1R','C1S','C3AR1','C5AR1','CA1','CA12','CA13','CA14','CA2','CA4','CA5A','CA5B','CA7','CA9','CACNA1B','CACNA1C','CACNA1D','CACNA1G','CACNA1H','CACNA1I','CACNA1S','CACNA2D1','CALCRL','CAMK2D','CAPN1','CAPN2','CAR13','CARM1','CASP1','CASP2','CASP3','CASP6','CASP7','CASP8','CASR','CBX1','CBX7','CCKAR','CCKBR','CCL2','CCL5','CCR1','CCR2','CCR3','CCR4','CCR5','CCR8','CD22','CDC25A','CDC25B','CDC25C','CDC7','CDK1','CDK2','CDK4','CDK5','CDK8','CDK9','CENPE','CES1','CES2','CETP','CFTR','CGA','CHAT','CHEK1','CHEK2','CHKA','CHRM1','CHRM2','CHRM3','CHRM4','CHRM5','CHRNA10','CHRNA3','CHRNA4','CHRNA6','CHRNA7','CHUK','CLK1','CLK2','CLK4','CMA1','CNR1','CNR2','COMT','CPA1','CPB1','CPB2','CREBBP','CRHR1','CSF1R','CSGALNACT1','CSK','CSNK1A1','CSNK1D','CSNK1G1','CSNK1G2','CSNK2A1','CSNK2A2','CTBP1','CTDSP1','CTNNB1','CTRB1','CTRC','CTSA','CTSB','CTSC','CTSD','CTSE','CTSF','CTSG','CTSK','CTSL','CTSS','CTSV','CX3CR1','CXCL8','CXCR1','CXCR2','CXCR3','CXCR4','CYP11B1','CYP11B2','CYP17A1','CYP19A1','CYP1A1','CYP1A2','CYP1B1','CYP24A1','CYP26A1','CYP2A6','CYP2B6','CYP2C19','CYP2C8','CYP2C9','CYP2D6','CYP2J2','CYP3A4','CYP51A1','CYSLTR1','DAGLA','DAO','DAPK3','DCK','DDIT3','DDR1','DDR2','DGAT1','DHFR','DHODH','DLG4','DNM1','DNMT1','DOT1L','DPEP1','DPP4','DPP7','DPP8','DPP9','DRD1','DRD2','DRD3','DRD4','DRD5','DUSP3','DUT','DYRK1A','DYRK1B','DYRK2','EBP','ECE1','EDNRA','EDNRB','EEF2K','EGFR','EGLN1','EGLN2','EGLN3','EHMT2','EIF2AK1','EIF2AK2','EIF2AK3','EIF4A1','EIF4E','ELANE','ELOVL6','ENPEP','ENPP2','EP300','EPAS1','EPHA4','EPHB3','EPHB4','EPHX1','EPHX2','ERAP1','ERBB2','ERBB4','ERCC5','ERG','ERN1','ESR1','ESR2','ESRRA','EYA2','EZH2','F10','F11','F12','F13A1','F2','F2R','F2RL1','F3','F7','F9','FAAH','FABP3','FABP4','FAP','FAS','FASN','FBP1','FCER2','FDFT1','FDPS','FEN1','FFAR1','FFAR2','FFAR4','FGFR1','FGFR2','FKBP1A','FLT1','FLT3','FLT4','FOLH1','FPGS','FPR1','FPR2','FSHR','FUCA1','FURIN','FYN','G6PD','GAA','GABRA1','GABRA5','GALK1','GALR2','GALR3','GAPDH','GART','GBA','GBA2','GCGR','GCK','GCKR','GFER','GGPS1','GHRHR','GHRL','GHSR','GLA','GLI1','GLO1','GLP1R','GLRA1','GLS','GMNN','GNAS','GNRHR','GPBAR1','GPR119','GPR142','GPR17','GPR183','GPR35','GPR55','GRB2','GRIA1','GRIA2','GRIA4','GRIK1','GRIK2','GRIN1','GRIN2B','GRIN2C','GRIN2D','GRK5','GRM1','GRM2','GRM3','GRM4','GRM5','GRM7','GRM8','GRPR','GSG2','GSK3A','GSK3B','GSR','GSTM1','GSTP1','GUSB','GYS1','GZMB','HAO2','HBB','HCAR2','HCAR3','HCK','HCN1','HCRTR1','HCRTR2','HDAC1','HDAC2','HDAC3','HDAC4','HDAC5','HDAC6','HDAC8','HIF1A','HKDC1','HLA-A','HLA-DRB1','HMGCR','HMOX1','HMOX2','HNF4A','HPGD','HPGDS','HPRT1','HPSE','HRAS','HRH1','HRH2','HRH3','HRH4','HSD11B1','HSD11B2','HSD17B1','HSD17B10','HSD17B2','HSD17B3','HSD17B7','HSF1','HSP90AA1','HSP90AB1','HSPA5','HTR1A','HTR1B','HTR1D','HTR1F','HTR2A','HTR2B','HTR2C','HTR3A','HTR4','HTR5A','HTR6','HTR7','HTT','IARS','ICAM1','ICMT','IDE','IDH1','IDO1','IGF1R','IGFBP3','IKBKB','IKBKE','IL5','IMPA1','IMPDH1','IMPDH2','INSR','IRAK4','ITGA2B','ITGA4','ITGAL','ITGAV','ITK','ITPR1','JAK1','JAK2','JAK3','JMJD7-PLA2G4B','JUN','KARS','KAT2A','KAT2B','KCNA3','KCNA5','KCNH2','KCNJ1','KCNJ11','KCNJ2','KCNK3','KCNMA1','KCNN3','KCNN4','KCNQ1','KCNQ2','KDM1A','KDM4A','KDM4C','KDM4E','KDR','KHK','KIF11','KISS1R','KIT','KLF5','KLK3','KLK5','KLK7','KLKB1','KMO','KMT2A','KPNA2','L3MBTL1','L3MBTL3','LAP3','LARGE','LCK','LDHA','LDLR','LGALS3','LGMN','LHCGR','LIMK1','LIMK2','LIPE','LIPG','LMNA','LNPEP','LPAR1','LPAR2','LPAR3','LRRK2','LSS','LTA4H','LTB4R','LYN','MAG','MAOA','MAOB','MAP2K1','MAP2K5','MAP3K11','MAP3K14','MAP3K5','MAP3K7','MAP3K8','MAP3K9','MAP4K2','MAP4K4','MAPK1','MAPK10','MAPK11','MAPK13','MAPK14','MAPK7','MAPK8','MAPK9','MAPKAPK2','MAPKAPK5','MAPT','MARS','MBNL1','MBTPS1','MC1R','MC3R','MC4R','MC5R','MCHR1','MCHR2','MCL1','MCOLN3','MDM2','MEN1','MERTK','MET','METAP1','METAP2','MGAM','MGAT2','MGLL','MGMT','MIF','MITF','MKNK1','MKNK2','MLLT3','MLNR','MLYCD','MME','MMP1','MMP11','MMP12','MMP13','MMP14','MMP2','MMP3','MMP7','MMP8','MMP9','MOGAT2','MPHOSPH8','MPI','MPL','MPO','MRGPRX1','MST1R','MTAP','MTNR1A','MTNR1B','MTOR','MTTP','MYLK','NAAA','NAMPT','NAT1','NAT2','NCEH1','NCF1','NCOA3','NEK2','NFE2L2','NFKB1','NIACR1','NISCH','NLRP3','NMBR','NMT1','NOD1','NOD2','NOS1','NOS2','NOS3','NOX1','NOX4','NPBWR1','NPC1','NPC1L1','NPFFR1','NPFFR2','NPSR1','NPY1R','NPY2R','NPY5R','NQO1','NQO2','NR0B1','NR1D1','NR1H2','NR1H3','NR1H4','NR1I2','NR2E3','NR3C1','NR3C2','NR4A1','NR5A1','NR5A2','NRP1','NT5E','NTRK1','NTRK2','NTRK3','NTSR1','NTSR2','OPRD1','OPRK1','OPRL1','OPRM1','OXER1','OXGR1','OXTR','P2RX1','P2RX2','P2RX3','P2RX4','P2RX7','P2RY1','P2RY12','P2RY14','P2RY2','P2RY4','P2RY6','P4HB','PABPC1','PADI1','PADI2','PADI3','PAK1','PAK4','PAM','PARP1','PARP2','PAX8','PCK1','PCNA','PCSK6','PDE10A','PDE11A','PDE1C','PDE2A','PDE3A','PDE3B','PDE4A','PDE4B','PDE4D','PDE5A','PDE6D','PDE7A','PDE8B','PDE9A','PDF','PDGFRA','PDGFRB','PDPK1','PFDN6','PGA5','PGC','PGGT1B','PGR','PHOSPHO1','PI4KA','PI4KB','PIK3CA','PIK3CB','PIK3CD','PIK3CG','PIM1','PIM2','PIM3','PIN1','PIP4K2A','PKLR','PKM','PLA2G10','PLA2G1B','PLA2G2A','PLA2G4A','PLA2G7','PLAT','PLAU','PLAUR','PLD1','PLD2','PLEC','PLG','PLIN1','PLK1','PLK2','PLK3','PLK4','PMP22','PNMT','PNP','POLA1','POLB','POLH','POLI','POLK','PORCN','PPARA','PPARD','PPARG','PPIA','PPOX','PPP1CA','PPP5C','PRCP','PREP','PRF1','PRKACA','PRKCA','PRKCB','PRKCD','PRKCE','PRKCG','PRKCH','PRKCQ','PRKCZ','PRKD1','PRKDC','PRKG1','PRKX','PRMT3','PRNP','PROC','PROKR1','PRSS1','PRSS8','PSEN1','PSMB1','PSMB2','PSMB5','PSMB8','PSMD14','PTAFR','PTBP1','PTGDR','PTGDR2','PTGDS','PTGER1','PTGER2','PTGER3','PTGER4','PTGES','PTGES2','PTGFR','PTGIR','PTGS1','PTGS2','PTH1R','PTK2','PTK2B','PTK6','PTPN1','PTPN11','PTPN2','PTPN22','PTPN7','PTPRA','PTPRB','PTPRC','PYGL','PYGM','QPCT','QRFPR','RAB9A','RAC1','RAD51','RAD52','RAD54L','RAF1','RAPGEF4','RARA','RARB','RARG','RASGRP3','RBP4','RCE1','RECQL','RELA','REN','RET','RGS19','RGS4','RHOA','RIPK1','RIPK2','ROCK1','ROCK2','RORA','RORC','ROS1','RPS6KA3','RPS6KA5','RPS6KB1','RXFP1','RXRA','RXRB','RXRG','S100A4','S1PR1','S1PR2','S1PR3','S1PR4','S1PR5','SCARB1','SCD','SCD1','SCN10A','SCN2A','SCN4A','SCN5A','SCN9A','SCNN1A','SELE','SELP','SENP1','SENP6','SENP7','SENP8','SERPINE1','SFRP1','SGK1','SHBG','SHH','SI','SIGMAR1','SIRT1','SIRT2','SLC10A1','SLC10A2','SLC11A2','SLC12A5','SLC16A1','SLC18A2','SLC18A3','SLC1A2','SLC1A3','SLC22A12','SLC27A1','SLC27A4','SLC29A1','SLC5A1','SLC5A2','SLC5A4','SLC5A7','SLC6A1','SLC6A2','SLC6A3','SLC6A4','SLC6A5','SLC6A9','SLC9A1','SLCO1B1','SLCO1B3','SMAD3','SMG1','SMN1','SMN2','SMO','SMPD1','SNCA','SOAT1','SOAT2','SORD','SORT1','SPHK1','SPHK2','SQLE','SRC','SRD5A1','SRD5A2','SSTR1','SSTR2','SSTR3','SSTR4','SSTR5','ST14','STAT1','STAT3','STAT6','STK17A','STK33','STS','SUCNR1','SUMO1','SYK','TAAR1','TACR1','TACR2','TACR3','TARDBP','TBK1','TBXA2R','TBXAS1','TDP1','TDP2','TEK','TERT','TGFBR1','TGFBR2','TGM2','THPO','THRA','THRB','TK1','TK2','TKT','TLR2','TLR4','TLR7','TLR8','TLR9','TMPRSS11D','TMPRSS15','TNF','TNFRSF1A','TNIK','TNK2','TNKS','TNKS2','TOP1','TOP2A','TP53','TPH1','TPP2','TPSAB1','TRHR','TRPA1','TRPC4','TRPC6','TRPM8','TRPV1','TRPV4','TSG101','TSHR','TSPO','TTK','TTR','TUBB1','TXNRD1','TYK2','TYMP','TYMS','TYR','TYRO3','UBE2N','UGCG','UGT2B7','UPP1','USP1','USP2','UTS2','UTS2R','VCAM1','VCP','VDR','VIPR1','WDR5','WEE1','WHSC1','WNT3','WNT3A','WRN','XBP1','XDH','XIAP','YARS','YES1','ZAP70']
     # all_tasks = ['AKT1','AVPR2','DNM1','HCAR2','HMOX1','HPSE','L3MBTL1','NTRK1','POLK','PTK2B']
@@ -743,15 +759,25 @@ def test_model(loader, model, tasks, calcpos=False):
         btf = embed_edges(adj, btf)
         outputs = model(Variable(adj), Variable(afm), Variable(axfm), Variable(btf))
         if calcpos:
-            smprobs = F.log_softmax(outputs, dim=1)
-            labels_pos = np.array(torch.sum(
-                smprobs > smprobs[labels.numpy().nonzero()].unsqueeze(1).expand(-1, outputs.shape[1]), dim=1
-            ).data)
-            total += labels_pos.size
-            pos_0 += sum(0 == labels_pos)
-            pos_5 += sum(5 > labels_pos)
-            pos_10 += sum(10 > labels_pos)
-            pos_30 += sum(30 > labels_pos)
+            smprobs = output_transform(outputs)
+            top_ks = [1, 5, 10, 30]
+            correct = [0, 0, 0, 0]
+            for i, topk in enumerate(top_ks):
+                if topk < smprobs.shape[1]:
+                    _, pos = smprobs.data.topk(topk)
+                    correct[i] = correct[i] + sum(labels.long() == pos)
+                    pass
+                else:
+                    break
+
+            # labels_pos = np.array(torch.sum(
+            #     smprobs > smprobs[labels.numpy().nonzero()].unsqueeze(1).expand(-1, outputs.shape[1]), dim=1
+            # ).data)
+            total += labels.shape[0]
+            # pos_0 += sum(0 == labels_pos)
+            # pos_5 += sum(5 > labels_pos)
+            # pos_10 += sum(10 > labels_pos)
+            # pos_30 += sum(30 > labels_pos)
         else:
             probs = F.sigmoid(outputs)
             if use_cuda:
@@ -781,7 +807,8 @@ def test_model(loader, model, tasks, calcpos=False):
     model.train()
 
     if calcpos:
-        return tuple(np.true_divide(np.array([pos_0, pos_5, pos_10, pos_30]), total).tolist())
+        # return tuple(np.true_divide(np.array([pos_0, pos_5, pos_10, pos_30]), total).tolist())
+        return tuple(np.true_divide(correct, total).tolist())
     else:
         aucs = []
         for key in list(range(0, len(tasks))):
@@ -799,6 +826,14 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
     x_all, y_all = data_filter(x_all, y_all, target, sizes, tasks)
     x_all, y_all = shuffle(x_all, y_all, random_state=random_state)
 
+    if parameter_holder is None:
+        n_afeat = x_all[0][0].shape[1]
+        n_bfeat = 0
+    else:
+        n_afeat = mol_to_graph_transform.afnorm.feature_num
+        n_bfeat = 0 # parameter_holder.n_bfeat
+
+
     x_all, edge_to_ix, edge_word_len, node_to_ix, node_word_len = embed_data(x_all, edge_vocab, node_vocab)
 
     if mol_to_graph_transform is not None:
@@ -813,22 +848,26 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
         test_loader = construct_pubchem_loader(x_test, y_test, batch_size, mol_to_graph_transform)
     del x_test, y_test
 
-    if parameter_holder is None:
-        n_afeat = 32
-        n_bfeat = 0
+    if 'hiv' == dataset:
+        model = Shi_GCN(n_bfeat=n_bfeat, n_afeat=n_afeat,
+                        n_sgc1_1=n_sgc1_1, n_sgc1_2=n_sgc1_2, n_sgc1_3=n_sgc1_3, n_sgc1_4=n_sgc1_4,
+                        n_sgc1_5=n_sgc1_5,
+                        n_sgc2_1=n_sgc2_1, n_sgc2_2=n_sgc2_2, n_sgc2_3=n_sgc2_3, n_sgc2_4=n_sgc2_4,
+                        n_sgc2_5=n_sgc2_5,
+                        n_den1=n_den1, n_den2=n_den2,
+                        nclass=len(tasks)+1, dropout=dropout,
+                        edge_to_ix=edge_to_ix, edge_word_len=edge_word_len, node_to_ix=node_to_ix,
+                        node_word_len=node_word_len)
     else:
-        n_afeat = mol_to_graph_transform.afnorm.feature_num
-        n_bfeat = 0 # parameter_holder.n_bfeat
-
-    model = Shi_GCN(n_bfeat=n_bfeat, n_afeat=n_afeat,
-                    n_sgc1_1=n_sgc1_1, n_sgc1_2=n_sgc1_2, n_sgc1_3=n_sgc1_3, n_sgc1_4=n_sgc1_4,
-                    n_sgc1_5=n_sgc1_5,
-                    n_sgc2_1=n_sgc2_1, n_sgc2_2=n_sgc2_2, n_sgc2_3=n_sgc2_3, n_sgc2_4=n_sgc2_4,
-                    n_sgc2_5=n_sgc2_5,
-                    n_den1=n_den1, n_den2=n_den2,
-                    nclass=len(tasks), dropout=dropout,
-                    edge_to_ix=edge_to_ix, edge_word_len=edge_word_len, node_to_ix=node_to_ix,
-                    node_word_len=node_word_len)
+        model = Shi_GCN(n_bfeat=n_bfeat, n_afeat=n_afeat,
+                        n_sgc1_1=n_sgc1_1, n_sgc1_2=n_sgc1_2, n_sgc1_3=n_sgc1_3, n_sgc1_4=n_sgc1_4,
+                        n_sgc1_5=n_sgc1_5,
+                        n_sgc2_1=n_sgc2_1, n_sgc2_2=n_sgc2_2, n_sgc2_3=n_sgc2_3, n_sgc2_4=n_sgc2_4,
+                        n_sgc2_5=n_sgc2_5,
+                        n_den1=n_den1, n_den2=n_den2,
+                        nclass=len(tasks), dropout=dropout,
+                        edge_to_ix=edge_to_ix, edge_word_len=edge_word_len, node_to_ix=node_to_ix,
+                        node_word_len=node_word_len)
 
     # if EAGCN_structure == 'concate':
     #     model = Concate_GCN(n_bfeat=n_bfeat, n_afeat=n_afeat,
@@ -901,15 +940,16 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
             labels = Variable(labels.float())
             non_nan_num = ((labels == 1).sum() + (labels == 0).sum()).float()
             weights = Variable(weight_tensor(BCE_weight, labels=labels))
-            if calcpos:
-                loss = F.cross_entropy(outputs, labels.nonzero()[:, 1],
-                                       weight=Variable(from_numpy(normed_BCE_weight)), size_average=False)
-            else:
-                loss = F.binary_cross_entropy_with_logits(outputs.view(-1), labels.float().view(-1), weight=weights,
-                                                          size_average=False)
-                # loss = F.binary_cross_entropy_with_logits(outputs.view(-1), labels.float().view(-1), weight=weights,
-                #                                           size_average=True)
-                # loss = loss / non_nan_num
+            loss = loss_func(output_transform(outputs),labels, weights)
+            # if calcpos:
+            #     loss = F.cross_entropy(outputs, labels.nonzero()[:, 1],
+            #                            weight=Variable(from_numpy(normed_BCE_weight)), size_average=False)
+            # else:
+            #     loss = F.binary_cross_entropy_with_logits(outputs.view(-1), labels.float().view(-1), weight=weights,
+            #                                               size_average=False)
+            #     # loss = F.binary_cross_entropy_with_logits(outputs.view(-1), labels.float().view(-1), weight=weights,
+            #     #                                           size_average=True)
+            #     # loss = loss / non_nan_num
 
             # model.print_embed_weights()
             # print('Loss: {}'.format(loss.data[0]))

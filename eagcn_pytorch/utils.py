@@ -37,7 +37,7 @@ def load_data(dataset, path = '../data/'):
     if dataset == 'tox21':
         x_all, y_all, target, sizes, edge_words, node_words = load_dc_tox21(path=path, keep_nan=True)
     elif dataset == 'hiv':
-        x_all, y_all, target, sizes = load_hiv(path=path, keep_nan=True)
+        x_all, y_all, target, sizes, edge_words, node_words = load_hiv(path=path, keep_nan=True)
     elif dataset == 'lipo':
         x_all, y_all, target, sizes = load_lipo()
     elif dataset == 'freesolv':
@@ -376,6 +376,10 @@ def load_hiv(path='../data/', dataset = 'HIV.csv', bondtype_freq =20, atomtype_f
     mol_sizes = []
     x_all = []
     y_all = []
+
+    edge_words = set()
+    node_words = set()
+
     print('Transfer mol to matrices')
     for row in data[1:]:
         i+=1
@@ -389,12 +393,14 @@ def load_hiv(path='../data/', dataset = 'HIV.csv', bondtype_freq =20, atomtype_f
         num_label = [-1 if math.isnan(x) else x for x in num_label]
         try:
             mol = MolFromSmiles(smile)
-            (afm, adj, bft, adjTensor_OrderAtt,
-             adjTensor_AromAtt, adjTensor_ConjAtt, adjTensor_RingAtt) = molToGraph(mol, filted_bondtype_list_order,
-                                                                                   filted_atomtype_list_order).dump_as_matrices_Att()
+            (afm, adj, bft, adjTensor_OrderAtt, adjTensor_AromAtt, adjTensor_ConjAtt, adjTensor_RingAtt, edge_word_set,
+             node_word_set) = molToGraph(mol, filted_bondtype_list_order,
+                                         filted_atomtype_list_order).dump_as_matrices_Att()
             x_all.append([afm, adj, bft, adjTensor_OrderAtt, adjTensor_AromAtt, adjTensor_ConjAtt, adjTensor_RingAtt])
             y_all.append(num_label)
             mol_sizes.append(adj.shape[0])
+            edge_words = edge_words.union(edge_word_set)
+            node_words = node_words.union(node_word_set)
             # feature matrices of mols, include Adj Matrix, Atom Feature, Bond Feature.
         except AttributeError:
             print('the {}th row has an error'.format(i))
@@ -404,7 +410,7 @@ def load_hiv(path='../data/', dataset = 'HIV.csv', bondtype_freq =20, atomtype_f
             pass
     x_all = feature_normalize(x_all)
     print('Done.')
-    return (x_all, y_all, target, mol_sizes)
+    return (x_all, y_all, target, mol_sizes, edge_words, node_words)
 
 class ParameterHolder(object):
 
