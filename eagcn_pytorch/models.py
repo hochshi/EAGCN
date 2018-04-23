@@ -5,6 +5,7 @@ from utils import *
 import torch
 from torch.autograd import Variable
 from fractions import gcd
+from sympy.ntheory import factorint
 
 # use_cuda = torch.cuda.is_available()
 FloatTensor = torch.cuda.FloatTensor if use_cuda else torch.FloatTensor
@@ -14,12 +15,12 @@ DoubleTensor = torch.cuda.DoubleTensor if use_cuda else torch.DoubleTensor
 
 
 class Shi_GCN(nn.Module):
-
     def __init__(self, n_bfeat, n_afeat, n_sgc1_1, n_sgc1_2, n_sgc1_3, n_sgc1_4, n_sgc1_5,
                  n_sgc2_1, n_sgc2_2, n_sgc2_3, n_sgc2_4, n_sgc2_5,
                  n_den1, n_den2,
-                 nclass, dropout, edge_to_ix, edge_word_len, node_to_ix, node_word_len, use_att = True, molfp_mode = 'sum', hidden_size=50, radius=3,
-                 edge_embedding_dim = 5, node_embedding_dim = 5):
+                 nclass, dropout, edge_to_ix, edge_word_len, node_to_ix, node_word_len, use_att=True, molfp_mode='sum',
+                 hidden_size=50, radius=2,
+                 edge_embedding_dim=5, node_embedding_dim=5):
         super(Shi_GCN, self).__init__()
 
         self.ngc1 = n_sgc1_1 + n_sgc1_2 + n_sgc1_3 + n_sgc1_4 + n_sgc1_5
@@ -48,26 +49,28 @@ class Shi_GCN(nn.Module):
         for rad in range(self.radius):
             setattr(self, '_'.join(('conv', 'node', str(rad))),
                     nn.Conv1d(self.node_attr_len, self.node_attr_len, kernel_size=1,
-                              stride=1, padding=0, dilation=1, groups=1,
+                              stride=1, padding=0, dilation=1, groups=Shi_GCN.largest_divisor(self.node_attr_len),
                               bias=True))
             self.conv[('node', rad)] = getattr(self, '_'.join(('conv', 'node', str(rad))))
 
             setattr(self, '_'.join(('conv', 'out', str(rad))), nn.Conv1d(self.node_attr_len, ngc1, kernel_size=1,
                                                                          stride=1, padding=0, dilation=1,
-                                                                         groups=1,
+                                                                         groups=gcd(self.node_attr_len, ngc1),
                                                                          bias=True))
             self.conv[('out', rad)] = getattr(self, '_'.join(('conv', 'out', str(rad))))
 
             setattr(self, '_'.join(('conv', 'neighbor', str(rad))), nn.Conv2d(self.node_attr_len + self.edge_embed_len,
                                                                               self.node_attr_len, kernel_size=1,
                                                                               stride=1,
-                                                                              padding=0, dilation=1, groups=1, bias=True))
+                                                                              padding=0, dilation=1, groups=gcd(
+                    self.node_attr_len + self.edge_embed_len, self.node_attr_len), bias=True))
             self.conv[('neighbor', rad)] = getattr(self, '_'.join(('conv', 'neighbor', str(rad))))
 
             setattr(self, '_'.join(('conv', 'edge', str(rad))), nn.Conv2d(self.edge_embed_len, self.edge_embed_len,
                                                                           kernel_size=1, stride=1, padding=0,
                                                                           dilation=1,
-                                                                          groups=1, bias=True))
+                                                                          groups=Shi_GCN.largest_divisor(
+                                                                              self.edge_embed_len), bias=True))
             self.conv[('edge', rad)] = getattr(self, '_'.join(('conv', 'edge', str(rad))))
 
             setattr(self, '_'.join(('bn', str(rad))), nn.BatchNorm1d(self.node_attr_len))
@@ -83,6 +86,16 @@ class Shi_GCN(nn.Module):
 
         self.out_softmax = nn.Softmax(dim=1)
         self.dropout = dropout
+
+    @staticmethod
+    def largest_divisor(n):
+        factors_dict = factorint(n)
+        factors = sorted(list(factors_dict.keys()), reverse=True)
+        ld = 1
+        for factor in factors[:-1]:
+            ld = ld * (factor ** factors_dict[factor])
+        ld = ld * (factors[-1] ** (factors_dict[factors[-1]] - 1))
+        return ld
 
     def fp_func(self, x):
         if 'sum' == self.molfp_mode:

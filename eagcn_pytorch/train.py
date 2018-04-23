@@ -23,7 +23,7 @@ import matplotlib.pyplot as plt
 from time import gmtime, strftime
 
 # Training settings
-dataset = 'tox21'  # 'tox21', 'hiv', 'pubchem_chembl'
+dataset = 'pubchem_chembl'  # 'tox21', 'hiv', 'pubchem_chembl'
 EAGCN_structure = 'concate'  # 'concate', 'weighted_ave'
 write_file = True
 n_den1, n_den2 = 64, 32
@@ -45,6 +45,9 @@ if dataset == 'tox21':
         return F.binary_cross_entropy_with_logits(outputs.view(-1), labels.float().view(-1), weight=weights,
                                                   size_average=False)
 
+    def weight_func(BCE_weight, labels):
+        return Variable(weight_tensor(BCE_weight, labels=labels))
+
 if dataset == 'hiv':
     n_sgc1_1, n_sgc1_2, n_sgc1_3, n_sgc1_4, n_sgc1_5 = 10, 10, 10, 10, 10
     n_sgc2_1, n_sgc2_2, n_sgc2_3, n_sgc2_4, n_sgc2_5 = 60, 20, 20, 20, 20
@@ -59,7 +62,12 @@ if dataset == 'hiv':
         return F.log_softmax(x, dim=1)
 
     def loss_func(outputs, labels, weights):
-        return nn.NLLLoss()(outputs, labels.squeeze(1).long())
+        return nn.NLLLoss(weight=weights)(outputs, labels.squeeze(1).long())
+
+    def weight_func(BCE_weight, labels):
+        normed_BCE_weight = np.array([val[0] for val in BCE_weight.values()], dtype=np.float32)
+        normed_BCE_weight = np.true_divide(normed_BCE_weight, sum(normed_BCE_weight))
+        return from_numpy(normed_BCE_weight)
 
 if dataset == 'pubchem_chembl':
     n_sgc1_1, n_sgc1_2, n_sgc1_3, n_sgc1_4, n_sgc1_5 = 10, 10, 10, 10, 10
@@ -71,6 +79,17 @@ if dataset == 'pubchem_chembl':
     random_state = 2
     num_epochs = 10
     learning_rate = 0.0005
+
+    def output_transform(x):
+        return F.log_softmax(x, dim=1)
+
+    def loss_func(outputs, labels, weights):
+        return nn.NLLLoss(weight=weights)(outputs, labels.max(dim=1)[1])
+
+    def weight_func(BCE_weight, labels):
+        normed_BCE_weight = np.array([val[0] for val in BCE_weight.values()], dtype=np.float32)
+        normed_BCE_weight = np.true_divide(normed_BCE_weight, sum(normed_BCE_weight))
+        return from_numpy(normed_BCE_weight)
 
 # Early Stopping:
 early_stop_step_single = 3
@@ -733,7 +752,7 @@ def embed_nodes(adjs, afms):
     nz, _ = adjs.max(dim=2)
     nz = nz.view(-1).byte()
     return (
-        afms.view(-1, afms.shape[-1])[nz.unsqueeze(1).expand(-1, 2)].view(-1, afms.shape[-1])[:,0].long(),
+        afms.view(-1, afms.shape[-1])[nz.unsqueeze(1).expand(-1, afms.shape[-1])].view(-1, afms.shape[-1])[:,0].long(),
         afms.view(-1, afms.shape[2])[:, 1:]
     )
 
@@ -748,7 +767,8 @@ def test_model(loader, model, tasks, calcpos=False):
     model.eval()
     out_value_dic = {}
     true_value_dic = {}
-    pos_0, pos_5, pos_10, pos_30, total = tuple([0] * 5)
+    correct = [0]*4
+    total = 0
     for adj, afm, btf, orderAtt, aromAtt, conjAtt, ringAtt, labels in loader:
         # adj_batch, afm_batch, btf_batch, label_batch = Variable(adj), Variable(afm), Variable(btf), Variable(labels)
         # orderAtt_batch, aromAtt_batch, conjAtt_batch, ringAtt_batch = Variable(orderAtt), Variable(aromAtt), Variable(
@@ -760,13 +780,15 @@ def test_model(loader, model, tasks, calcpos=False):
         outputs = model(Variable(adj), Variable(afm), Variable(axfm), Variable(btf))
         if calcpos:
             smprobs = output_transform(outputs)
+            labels_pos = torch.sum(smprobs > smprobs[1 == labels].unsqueeze(1).expand(-1, outputs.shape[1]), dim=1)
             top_ks = [1, 5, 10, 30]
-            correct = [0, 0, 0, 0]
+            top_ks = np.array(top_ks) - 1
             for i, topk in enumerate(top_ks):
-                if topk < smprobs.shape[1]:
-                    _, pos = smprobs.data.topk(topk)
-                    correct[i] = correct[i] + sum(labels.long() == pos)
-                    pass
+                if (topk+1) < smprobs.shape[1]:
+                    # _, pos = smprobs.data.topk(topk)
+                    # for j, val in enumerate(labels.max(dim=1)[1]):
+                    #     correct[i] += np.isin(val, pos[j])
+                    correct[i] = correct[i] + sum(labels_pos <= topk).data[0]
                 else:
                     break
 
@@ -826,7 +848,7 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
     x_all, y_all = data_filter(x_all, y_all, target, sizes, tasks)
     x_all, y_all = shuffle(x_all, y_all, random_state=random_state)
 
-    if parameter_holder is None:
+    if mol_to_graph_transform is None:
         n_afeat = x_all[0][0].shape[1]
         n_bfeat = 0
     else:
@@ -836,9 +858,9 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
 
     x_all, edge_to_ix, edge_word_len, node_to_ix, node_word_len = embed_data(x_all, edge_vocab, node_vocab)
 
-    if mol_to_graph_transform is not None:
+    try:
         X, x_test, y, y_test = train_test_split(x_all, y_all, test_size=0.1, random_state=random_state, stratify=y_all)
-    else:
+    except:
         X, x_test, y, y_test = train_test_split(x_all, y_all, test_size=0.1, random_state=random_state)
 
     del x_all, y_all
@@ -896,15 +918,15 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
     validation_acc_history = []
     stop_training = False
     BCE_weight = set_weight(y)
-    normed_BCE_weight = np.array([val[0] for val in BCE_weight.values()], dtype=np.float32)
-    normed_BCE_weight = np.true_divide(normed_BCE_weight, sum(normed_BCE_weight))
+    # normed_BCE_weight = np.array([val[0] for val in BCE_weight.values()], dtype=np.float32)
+    # normed_BCE_weight = np.true_divide(normed_BCE_weight, sum(normed_BCE_weight))
 
     # X = np.array(X)
     # y = np.array(y)
 
-    if mol_to_graph_transform is not None:
+    try:
         x_train, x_val, y_train, y_val = train_test_split(X, y, test_size=0.1, random_state=random_state, stratify=y)
-    else:
+    except:
         x_train, x_val, y_train, y_val = train_test_split(X, y, test_size=0.1, random_state=random_state)
 
     del X, y
@@ -939,7 +961,8 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
             # outputs = model(Variable(adj), Variable(afm), Variable(btf), Variable(orderAtt), Variable(aromAtt), Variable(conjAtt), Variable(ringAtt))
             labels = Variable(labels.float())
             non_nan_num = ((labels == 1).sum() + (labels == 0).sum()).float()
-            weights = Variable(weight_tensor(BCE_weight, labels=labels))
+            # weights = Variable(weight_tensor(BCE_weight, labels=labels))
+            weights = Variable(weight_func(BCE_weight, labels))
             loss = loss_func(output_transform(outputs),labels, weights)
             # if calcpos:
             #     loss = F.cross_entropy(outputs, labels.nonzero()[:, 1],
