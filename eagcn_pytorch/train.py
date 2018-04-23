@@ -76,7 +76,7 @@ if dataset == 'pubchem_chembl':
     batch_size = 128
     weight_decay = 0.0001  # L-2 Norm
     dropout = 0.3
-    random_state = 2
+    random_state = 11
     num_epochs = 100
     learning_rate = 0.0005
 
@@ -968,13 +968,11 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
     # train_loader, validation_loader, test_loader, BCE_weight, len_train = split_data(x_all, y_all, target,
     #                                                                                  mol_to_graph_transform)
 
+    train_loader, validation_loader, test_loader, BCE_weight, len_train = split_data(x_all, y_all, target,
+                                                                                     mol_to_graph_transform,
+                                                                                     random_state=random_state)
     for epoch in range(num_epochs):
         print("Epoch: [{}/{}]".format(epoch + 1, num_epochs))
-
-        if 0 == epoch % 10:
-            train_loader, validation_loader, test_loader, BCE_weight, len_train = split_data(x_all, y_all, target,
-                                                                                             mol_to_graph_transform)
-
         for i, (adj, afm, btf, orderAtt, aromAtt, conjAtt, ringAtt, labels) in enumerate(train_loader):
             # print('Step: [{}/{}]'.format(i + 1, math.ceil(len_train / batch_size)))
             # adj_batch, afm_batch, btf_batch, label_batch = Variable(adj), Variable(afm), Variable(btf), Variable(labels)
