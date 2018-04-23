@@ -77,7 +77,7 @@ if dataset == 'pubchem_chembl':
     weight_decay = 0.0001  # L-2 Norm
     dropout = 0.3
     random_state = 2
-    num_epochs = 10
+    num_epochs = 100
     learning_rate = 0.0005
 
     def output_transform(x):
@@ -757,6 +757,34 @@ def embed_nodes(adjs, afms):
     )
 
 
+def split_data(x_all, y_all, target, mol_to_graph_transform, random_state=random_state):
+    try:
+        X, x_test, y, y_test = train_test_split(x_all, y_all, test_size=0.1, random_state=random_state, stratify=y_all)
+    except:
+        X, x_test, y, y_test = train_test_split(x_all, y_all, test_size=0.1, random_state=random_state)
+    # del x_all, y_all
+    if mol_to_graph_transform is None:
+        test_loader = construct_loader(x_test, y_test, target, batch_size)
+    else:
+        test_loader = construct_pubchem_loader(x_test, y_test, batch_size, mol_to_graph_transform)
+    del x_test, y_test
+    BCE_weight = set_weight(y)
+    try:
+        x_train, x_val, y_train, y_val = train_test_split(X, y, test_size=0.1, random_state=random_state, stratify=y)
+    except:
+        x_train, x_val, y_train, y_val = train_test_split(X, y, test_size=0.1, random_state=random_state)
+    del X, y
+    if mol_to_graph_transform is None:
+        train_loader = construct_loader(x_train, y_train, target, batch_size)
+        validation_loader = construct_loader(x_val, y_val, target, batch_size)
+    else:
+        train_loader = construct_pubchem_loader(x_train, y_train, batch_size, mol_to_graph_transform)
+        validation_loader = construct_pubchem_loader(x_val, y_val, batch_size, mol_to_graph_transform)
+    len_train = len(x_train)
+    del x_train, y_train, x_val, y_val
+    return (train_loader, validation_loader, test_loader, BCE_weight, len_train)
+
+
 def test_model(loader, model, tasks, calcpos=False):
     """
     Help function that tests the model's performance on a dataset
@@ -858,18 +886,6 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
 
     x_all, edge_to_ix, edge_word_len, node_to_ix, node_word_len = embed_data(x_all, edge_vocab, node_vocab)
 
-    try:
-        X, x_test, y, y_test = train_test_split(x_all, y_all, test_size=0.1, random_state=random_state, stratify=y_all)
-    except:
-        X, x_test, y, y_test = train_test_split(x_all, y_all, test_size=0.1, random_state=random_state)
-
-    del x_all, y_all
-    if mol_to_graph_transform is None:
-        test_loader = construct_loader(x_test, y_test, target, batch_size)
-    else:
-        test_loader = construct_pubchem_loader(x_test, y_test, batch_size, mol_to_graph_transform)
-    del x_test, y_test
-
     if 'hiv' == dataset:
         model = Shi_GCN(n_bfeat=n_bfeat, n_afeat=n_afeat,
                         n_sgc1_1=n_sgc1_1, n_sgc1_2=n_sgc1_2, n_sgc1_3=n_sgc1_3, n_sgc1_4=n_sgc1_4,
@@ -917,30 +933,47 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
 
     validation_acc_history = []
     stop_training = False
-    BCE_weight = set_weight(y)
     # normed_BCE_weight = np.array([val[0] for val in BCE_weight.values()], dtype=np.float32)
     # normed_BCE_weight = np.true_divide(normed_BCE_weight, sum(normed_BCE_weight))
 
     # X = np.array(X)
     # y = np.array(y)
 
-    try:
-        x_train, x_val, y_train, y_val = train_test_split(X, y, test_size=0.1, random_state=random_state, stratify=y)
-    except:
-        x_train, x_val, y_train, y_val = train_test_split(X, y, test_size=0.1, random_state=random_state)
+    # try:
+    #     X, x_test, y, y_test = train_test_split(x_all, y_all, test_size=0.1, random_state=random_state, stratify=y_all)
+    # except:
+    #     X, x_test, y, y_test = train_test_split(x_all, y_all, test_size=0.1, random_state=random_state)
+    # del x_all, y_all
+    # if mol_to_graph_transform is None:
+    #     test_loader = construct_loader(x_test, y_test, target, batch_size)
+    # else:
+    #     test_loader = construct_pubchem_loader(x_test, y_test, batch_size, mol_to_graph_transform)
+    # del x_test, y_test
+    # BCE_weight = set_weight(y)
+    # try:
+    #     x_train, x_val, y_train, y_val = train_test_split(X, y, test_size=0.1, random_state=random_state, stratify=y)
+    # except:
+    #     x_train, x_val, y_train, y_val = train_test_split(X, y, test_size=0.1, random_state=random_state)
+    #
+    # del X, y
+    # if mol_to_graph_transform is None:
+    #     train_loader = construct_loader(x_train, y_train, target, batch_size)
+    #     validation_loader = construct_loader(x_val, y_val, target, batch_size)
+    # else:
+    #     train_loader = construct_pubchem_loader(x_train, y_train, batch_size, mol_to_graph_transform)
+    #     validation_loader = construct_pubchem_loader(x_val, y_val, batch_size, mol_to_graph_transform)
+    # len_train = len(x_train)
+    # del x_train, y_train, x_val, y_val
 
-    del X, y
-    if mol_to_graph_transform is None:
-        train_loader = construct_loader(x_train, y_train, target, batch_size)
-        validation_loader = construct_loader(x_val, y_val, target, batch_size)
-    else:
-        train_loader = construct_pubchem_loader(x_train, y_train, batch_size, mol_to_graph_transform)
-        validation_loader = construct_pubchem_loader(x_val, y_val, batch_size, mol_to_graph_transform)
-    len_train = len(x_train)
-    del x_train, y_train, x_val, y_val
+    # train_loader, validation_loader, test_loader, BCE_weight, len_train = split_data(x_all, y_all, target,
+    #                                                                                  mol_to_graph_transform)
 
     for epoch in range(num_epochs):
         print("Epoch: [{}/{}]".format(epoch + 1, num_epochs))
+
+        if 0 == epoch % 10:
+            train_loader, validation_loader, test_loader, BCE_weight, len_train = split_data(x_all, y_all, target,
+                                                                                             mol_to_graph_transform)
 
         for i, (adj, afm, btf, orderAtt, aromAtt, conjAtt, ringAtt, labels) in enumerate(train_loader):
             # print('Step: [{}/{}]'.format(i + 1, math.ceil(len_train / batch_size)))
@@ -1052,9 +1085,18 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
     if calcpos:
         tpos_0, tpos_5, tpos_10, tpos_30 = test_model(test_loader, model, tasks, calcpos=True)
         print(
-            'Test: 0: {}, 5: {}, 10: {}, 30: {}'.format(
+            'Test: 1: {}, 5: {}, 10: {}, 30: {}'.format(
                 tpos_0, tpos_5, tpos_10, tpos_30
             ))
+        torch.save(model.state_dict(), '{}.pkl'.format(file_name))
+        torch.save(model, '{}.pt'.format(file_name))
+
+        if write_file:
+            with open(file_name, 'a') as fp:
+                fp.write('Test: 1: {}, 5: {}, 10: {}, 30: {}'.format(
+                tpos_0, tpos_5, tpos_10, tpos_30
+            ))
+
         return (tpos_0, tpos_5, tpos_10, tpos_30)
     else:
         test_auc_sep, test_auc_tot = test_model(test_loader, model, tasks)
