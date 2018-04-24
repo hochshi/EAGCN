@@ -8,10 +8,10 @@ from fractions import gcd
 from sympy.ntheory import factorint
 
 # use_cuda = torch.cuda.is_available()
-FloatTensor = torch.cuda.FloatTensor if use_cuda else torch.FloatTensor
-LongTensor = torch.cuda.LongTensor if use_cuda else torch.LongTensor
-IntTensor = torch.cuda.IntTensor if use_cuda else torch.IntTensor
-DoubleTensor = torch.cuda.DoubleTensor if use_cuda else torch.DoubleTensor
+# FloatTensor = torch.cuda.FloatTensor if use_cuda else torch.FloatTensor
+# LongTensor = torch.cuda.LongTensor if use_cuda else torch.LongTensor
+# IntTensor = torch.cuda.IntTensor if use_cuda else torch.IntTensor
+# DoubleTensor = torch.cuda.DoubleTensor if use_cuda else torch.DoubleTensor
 
 
 class Shi_GCN(nn.Module):
@@ -38,53 +38,53 @@ class Shi_GCN(nn.Module):
         self.node_word_len = node_word_len
         self.node_embed_len = node_embedding_dim
         self.node_attr_len = n_afeat - self.node_word_len + self.node_embed_len
-        self.edge_embeddings = nn.Embedding(len(edge_to_ix), edge_embedding_dim)
-        self.node_embeddings = nn.Embedding(len(node_to_ix), node_embedding_dim)
-        self.edge_bn = nn.BatchNorm2d(edge_embedding_dim)
-        self.node_bn = nn.BatchNorm1d(self.node_attr_len)
+        self.edge_embeddings = to_hw(nn.Embedding(len(edge_to_ix), edge_embedding_dim))
+        self.node_embeddings = to_hw(nn.Embedding(len(node_to_ix), node_embedding_dim))
+        self.edge_bn = to_hw(nn.BatchNorm2d(edge_embedding_dim))
+        self.node_bn = to_hw(nn.BatchNorm1d(self.node_attr_len))
 
         self.conv = {}
         self.bn = {}
 
         for rad in range(self.radius):
             setattr(self, '_'.join(('conv', 'node', str(rad))),
-                    nn.Conv1d(self.node_attr_len, self.node_attr_len, kernel_size=1,
+                    to_hw(nn.Conv1d(self.node_attr_len, self.node_attr_len, kernel_size=1,
                               stride=1, padding=0, dilation=1, groups=Shi_GCN.largest_divisor(self.node_attr_len),
-                              bias=True))
+                              bias=True)))
             self.conv[('node', rad)] = getattr(self, '_'.join(('conv', 'node', str(rad))))
 
-            setattr(self, '_'.join(('conv', 'out', str(rad))), nn.Conv1d(self.node_attr_len, ngc1, kernel_size=1,
+            setattr(self, '_'.join(('conv', 'out', str(rad))), to_hw(nn.Conv1d(self.node_attr_len, ngc1, kernel_size=1,
                                                                          stride=1, padding=0, dilation=1,
                                                                          groups=gcd(self.node_attr_len, ngc1),
-                                                                         bias=True))
+                                                                         bias=True)))
             self.conv[('out', rad)] = getattr(self, '_'.join(('conv', 'out', str(rad))))
 
-            setattr(self, '_'.join(('conv', 'neighbor', str(rad))), nn.Conv2d(self.node_attr_len + self.edge_embed_len,
+            setattr(self, '_'.join(('conv', 'neighbor', str(rad))), to_hw(nn.Conv2d(self.node_attr_len + self.edge_embed_len,
                                                                               self.node_attr_len, kernel_size=1,
                                                                               stride=1,
                                                                               padding=0, dilation=1, groups=gcd(
-                    self.node_attr_len + self.edge_embed_len, self.node_attr_len), bias=True))
+                    self.node_attr_len + self.edge_embed_len, self.node_attr_len), bias=True)))
             self.conv[('neighbor', rad)] = getattr(self, '_'.join(('conv', 'neighbor', str(rad))))
 
-            setattr(self, '_'.join(('conv', 'edge', str(rad))), nn.Conv2d(self.edge_embed_len, self.edge_embed_len,
+            setattr(self, '_'.join(('conv', 'edge', str(rad))), to_hw(nn.Conv2d(self.edge_embed_len, self.edge_embed_len,
                                                                           kernel_size=1, stride=1, padding=0,
                                                                           dilation=1,
                                                                           groups=Shi_GCN.largest_divisor(
-                                                                              self.edge_embed_len), bias=True))
+                                                                              self.edge_embed_len), bias=True)))
             self.conv[('edge', rad)] = getattr(self, '_'.join(('conv', 'edge', str(rad))))
 
-            setattr(self, '_'.join(('bn', str(rad))), nn.BatchNorm1d(self.node_attr_len))
+            setattr(self, '_'.join(('bn', str(rad))), to_hw(nn.BatchNorm1d(self.node_attr_len)))
             self.bn[rad] = getattr(self, '_'.join(('bn', str(rad))))
 
         self.molfp_mode = molfp_mode
         if 'sum' == molfp_mode:
-            self.out_bn = nn.BatchNorm1d(ngc1)
-            self.dense = nn.Linear(ngc1, nclass)
+            self.out_bn = to_hw(nn.BatchNorm1d(ngc1))
+            self.dense = to_hw(nn.Linear(ngc1, nclass))
         else:
-            self.out_bn = nn.BatchNorm1d(self.radius*ngc1)
-            self.dense = nn.Linear(self.radius*ngc1, nclass)
+            self.out_bn = to_hw(nn.BatchNorm1d(self.radius*ngc1))
+            self.dense = to_hw(nn.Linear(self.radius*ngc1, nclass))
 
-        self.out_softmax = nn.Softmax(dim=1)
+        self.out_softmax = to_hw(nn.Softmax(dim=1))
         self.dropout = dropout
 
     @staticmethod
@@ -106,7 +106,7 @@ class Shi_GCN(nn.Module):
         nz = adjs.view(-1).byte()
         new_edges = Variable(from_numpy(np.zeros(nz.shape + (self.edge_embed_len,))).float())
         new_edges[nz.unsqueeze(1).expand(-1, self.edge_embed_len)] = self.edge_embeddings(bfts).view(-1)
-        new_edges = F.tanh(self.edge_bn(new_edges.view(adjs.shape + (-1,)).permute(0, 3, 1, 2)))
+        new_edges = F.tanh(self.edge_bn(new_edges.view(adjs.shape + (-1,)).permute(0, 3, 1, 2).contiguous()))
         return F.dropout(
             torch.mul(new_edges, adjs.unsqueeze(1).expand(-1, self.edge_embed_len, -1, -1)),
             p=self.dropout,
@@ -120,7 +120,7 @@ class Shi_GCN(nn.Module):
         new_nodes[nz.unsqueeze(1).expand(-1, self.node_embed_len)] = self.node_embeddings(afms).view(-1)
 
         new_nodes = torch.cat((new_nodes, axfms), dim=1)
-        new_nodes = F.tanh(self.node_bn(new_nodes.view(adjs.shape[0:-1] + (-1,)).permute(0, 2, 1)))
+        new_nodes = F.tanh(self.node_bn(new_nodes.view(adjs.shape[0:-1] + (-1,)).permute(0, 2, 1).contiguous()))
 
         return F.dropout(
             torch.mul(new_nodes, nz.view(adjs.shape[0:-1]).unsqueeze(1).expand(-1, self.node_attr_len, -1).float()),

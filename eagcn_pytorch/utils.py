@@ -19,16 +19,30 @@ import torch.nn.functional as F
 
 use_cuda = torch.cuda.is_available()
 
-def from_numpy(x):
-    if use_cuda:
+
+if use_cuda:
+    FloatTensor = torch.cuda.FloatTensor
+    LongTensor = torch.cuda.LongTensor
+    IntTensor = torch.cuda.IntTensor
+    DoubleTensor = torch.cuda.DoubleTensor
+
+    def from_numpy(x):
         return torch.from_numpy(x).cuda()
-    else:
+
+    def to_hw(x):
+        return x.cuda()
+else:
+    FloatTensor = torch.FloatTensor
+    LongTensor = torch.LongTensor
+    IntTensor = torch.IntTensor
+    DoubleTensor = torch.DoubleTensor
+
+    def from_numpy(x):
         return torch.from_numpy(x)
 
-FloatTensor = torch.cuda.FloatTensor if use_cuda else torch.FloatTensor
-LongTensor = torch.cuda.LongTensor if use_cuda else torch.LongTensor
-IntTensor = torch.cuda.IntTensor if use_cuda else torch.IntTensor
-DoubleTensor = torch.cuda.DoubleTensor if use_cuda else torch.DoubleTensor
+    def to_hw(x):
+        return x.cpu()
+
 
 def load_data(dataset, path = '../data/'):
     mol_to_graph_transform = None
@@ -1049,7 +1063,7 @@ def got_all_Type_solu_dic(dataset, path='../data/'):
         delimiter = ','
         quotechar = '"'
         smile_idx = -1
-        len_data = 578746
+        len_data = 578676
     elif dataset == 'small_batch_test.csv':
         MolFromTextFunc = MolFromInchi
         delimiter = ','
