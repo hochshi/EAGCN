@@ -316,6 +316,7 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
 
     validation_acc_history = []
+    acc_history = np.empty([4, 2, num_epochs])
     stop_training = False
     train_loader, validation_loader, test_loader, BCE_weight, len_train = split_data(x_all, y_all, target,
                                                                                      mol_to_graph_transform,
@@ -342,8 +343,10 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
             if calcpos:
                 print("Calculating train pos...")
                 tpos_0, tpos_5, tpos_10, tpos_30 = test_model(train_loader, model, tasks, calcpos=True)
+                acc_history[:, 0, epoch] = [tpos_0, tpos_5, tpos_10, tpos_30]
                 print("Calculating validation pos...")
                 vpos_0, vpos_5, vpos_10, vpos_30 = test_model(validation_loader, model, tasks, calcpos=True)
+                acc_history[:, 1, epoch] = [vpos_0, vpos_5, vpos_10, vpos_30]
                 print(
                     'Epoch: [{}/{}], '
                     'Step: [{}/{}], '
@@ -419,7 +422,7 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
                 fp.write('Test: 1: {}, 5: {}, 10: {}, 30: {}'.format(
                 tpos_0, tpos_5, tpos_10, tpos_30
             ))
-
+            np.savez('{}_acc_history'.format(file_name), acc_history=acc_history)
         return (tpos_0, tpos_5, tpos_10, tpos_30)
     else:
         test_auc_sep, test_auc_tot = test_model(test_loader, model, tasks)
