@@ -31,6 +31,7 @@ class Shi_GCN(nn.Module):
         hidden_size = self.hidden_size
         self.radius = radius+1
 
+        self.use_att = use_att
         self.edge_to_ix = edge_to_ix
         self.edge_word_len = edge_word_len
         self.edge_embed_len = edge_embedding_dim
@@ -179,7 +180,53 @@ class Shi_GCN(nn.Module):
     def train(self, mode=True):
         super(Shi_GCN, self).train(mode=mode)
 
-    def forward(self, adjs, afms, axfms, bfts):  # bfts
+    def forward(self, adjs, afms, axfms, bfts):
+        if self.use_att:
+            return self.att_forward(adjs, afms, axfms, bfts)
+        else:
+            return self.act_forward(adjs, afms, axfms, bfts)
+
+    def act_forward(self, adjs, afms, axfms, bfts):
+        edge_data = self.embed_edges(adjs, bfts)
+        node_data = self.embed_nodes(adjs, afms, axfms)
+
+        adjs_no_diag = torch.clamp(adjs - Variable(from_numpy(np.eye(adjs.size()[1])).float()), min=0)
+
+        nz, _ = adjs.max(dim=2)
+
+        fps = []
+
+        node_current = node_data
+        edge_current = edge_data
+        adj_mat = adjs_no_diag
+        adj_mats = []
+
+        # TODO: Should we conv edge_data (edge_current) for next iteration?
+        # TODO: Should we conv node_data (node_current) for next iteration?
+
+        # node_rep = node_current
+        for radius in range(self.radius):
+            fp = self.get_node_activation(nz, node_current, radius)
+            fps.append(fp)
+
+            node_next = self.get_next_node(nz, node_current, radius)
+            neighbor_next = self.get_neighbor_act(adj_mat, node_current, edge_current,
+                                                  radius)  # get neighbor activation
+            node_next = node_next + neighbor_next
+
+            edge_next = torch.matmul(adj_mat.unsqueeze(1).expand((-1, self.edge_embed_len, -1, -1)), edge_data)
+            adj_mats.append(adj_mat)
+            adj_mat = self.next_radius_adj_mat(adj_mat, adj_mats)
+            edge_next = self.get_next_edge(adj_mat, edge_next, radius)
+
+            node_current, edge_current = node_next, edge_next
+
+        fps = self.fp_func(fps)
+        fps = self.out_bn(fps)
+
+        return self.dense(fps)
+
+    def att_forward(self, adjs, afms, axfms, bfts):  # bfts
         edge_data = self.embed_edges(adjs, bfts)
         node_data = self.embed_nodes(adjs, afms, axfms)
 

@@ -23,7 +23,7 @@ import matplotlib.pyplot as plt
 from time import gmtime, strftime
 
 # Training settings
-dataset = 'pubchem_chembl'  # 'tox21', 'hiv', 'pubchem_chembl'
+dataset = 'tox21'  # 'tox21', 'hiv', 'pubchem_chembl'
 EAGCN_structure = 'concate'  # 'concate', 'weighted_ave'
 write_file = True
 n_den1, n_den2 = 64, 32
@@ -70,10 +70,10 @@ if dataset == 'hiv':
         return from_numpy(normed_BCE_weight)
 
 if dataset == 'pubchem_chembl':
-    n_sgc1_1, n_sgc1_2, n_sgc1_3, n_sgc1_4, n_sgc1_5 = 10, 10, 10, 10, 10
+    n_sgc1_1, n_sgc1_2, n_sgc1_3, n_sgc1_4, n_sgc1_5 = 20, 20, 20, 20, 20
     n_sgc2_1, n_sgc2_2, n_sgc2_3, n_sgc2_4, n_sgc2_5 = 60, 20, 20, 20, 20
     # batch_size = 16384
-    batch_size = 128
+    batch_size = 64
     weight_decay = 0.0001  # L-2 Norm
     dropout = 0.3
     random_state = 11
@@ -304,7 +304,7 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
                         n_den1=n_den1, n_den2=n_den2,
                         nclass=len(tasks), dropout=dropout,
                         edge_to_ix=edge_to_ix, edge_word_len=edge_word_len, node_to_ix=node_to_ix,
-                        node_word_len=node_word_len)
+                        node_word_len=node_word_len, use_att=False)
 
 
     print("model has {} parameters".format(count_parameters(model)))
@@ -333,7 +333,7 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
             outputs = model(Variable(adj), Variable(afm), Variable(axfm), Variable(btf))
             labels = Variable(labels.float())
             non_nan_num = ((labels == 1).sum() + (labels == 0).sum()).float()
-            weights = Variable(weight_func(BCE_weight, labels))
+            weights = weight_func(BCE_weight, labels)
             loss = loss_func(output_transform(outputs),labels, weights)
             loss.backward()
             optimizer.step()
