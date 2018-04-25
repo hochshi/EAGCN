@@ -71,13 +71,10 @@ class MolGraph(nn.Module):
         lnb = torch.mul(adj_mat.unsqueeze(1).expand((-1, self.edge_embed_len, -1, -1)), edge_data)
         ln = torch.cat((lna, lnb), dim=1)
         ln = self.conv[('neighbor', layer)](ln)
-        ln = torch.mul(adj_mat.unsqueeze(1).expand((-1, self.node_attr_len, -1, -1)), ln) # .permute(0, 2, 3, 1)
-        # ln[adj_mat.unsqueeze(3).expand(-1, -1, -1, self.node_attr_len).byte()] = F.relu(
-        #     self.bn[('neighbor', layer)](
-        #         ln[adj_mat.unsqueeze(3).expand(-1, -1, -1, self.node_attr_len).byte()].view(-1, self.node_attr_len))
-        # )
-        # ln = ln.permute(0, 3, 1, 2).contiguous()
-        ln = F.relu(ln)
+        ln = torch.mul(adj_mat.unsqueeze(1).expand((-1, self.node_attr_len, -1, -1)), ln).permute(0, 2, 3, 1)
+        ln[adj_mat.unsqueeze(3).expand(-1, -1, -1, self.node_attr_len).byte()] = self.bn[('neighbor', layer)](
+                ln[adj_mat.unsqueeze(3).expand(-1, -1, -1, self.node_attr_len).byte()].view(-1, self.node_attr_len))
+        ln = F.relu(ln.permute(0, 3, 1, 2).contiguous())
         ln = ln.sum(dim=3)
         nz, _ = adj_mat.max(dim=2)
         nz = nz.view(-1).byte()
@@ -131,7 +128,8 @@ class ConcatModule(nn.Module):
         super(ConcatModule, self).__init__()
 
     def forward(self, inputs):
-        return torch.cat(inputs, dim=1).view(inputs[0].shape[0], len(inputs), inputs[0].shape[1], -1).permute(0, 3, 1, 2).unsqueeze(1)
+        return torch.cat(inputs, dim=1).view(inputs[0].shape[0], len(inputs), inputs[0].shape[1], -1)
+        # return torch.cat(inputs, dim=1).view(inputs[0].shape[0], len(inputs), inputs[0].shape[1], -1).permute(0, 3, 1, 2).unsqueeze(1)
 
 class MolGCN(nn.Module):
     def __init__(self, n_afeat, edge_to_ix, edge_word_len, node_to_ix, node_word_len, nclass, edge_embedding_dim=5,
@@ -145,6 +143,7 @@ class MolGCN(nn.Module):
 
         no_stages = np.ceil(np.log2(n_afeat - node_word_len + node_embedding_dim))
         stages_dim = np.power(2, [0] + (np.arange(no_stages) + 4).tolist()).astype(int)
+        stages_dim[0] = self.radius
         stages_dim_tup = zip(stages_dim[:-1], stages_dim[1:])
 
         stages = [self._make_layer(*dims) for dims in stages_dim_tup]
@@ -154,9 +153,11 @@ class MolGCN(nn.Module):
 
     def _make_layer(self, in_channels, out_channels):
         return nn.Sequential(
-            nn.Conv3d(in_channels, out_channels, kernel_size=(1, 3, 3), padding=(0, 1, 1), bias=False),
+            # nn.Conv3d(in_channels, out_channels, kernel_size=(1, 3, 3), padding=(0, 1, 1), bias=False),
+            nn.Conv2d(in_channels, out_channels, kernel_size=(3, 1), padding=(1, 0), bias=False),
             nn.ReLU(),
-            nn.Conv3d(out_channels, out_channels, kernel_size=1, stride=(1, 2, 2), bias=False),
+            # nn.Conv3d(out_channels, out_channels, kernel_size=1, stride=(1, 2, 2), bias=False),
+            nn.Conv2d(out_channels, out_channels, kernel_size=1, stride=(2, 1), bias=False),
             nn.ReLU()
         )
 
@@ -164,7 +165,8 @@ class MolGCN(nn.Module):
         x = self.molgraph(adjs, afms, axfms, bfts)
         x = self.concat(x)
         x = self.stages(x)
-        x = x.squeeze(-1).squeeze(-1).sum(dim=2)
+        # x = x.squeeze(-1).squeeze(-1).sum(dim=2)
+        x = x.sum(dim=-1).view(x.shape[0], -1)
         return self.classifier(x)
 
 
