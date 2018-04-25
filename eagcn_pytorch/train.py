@@ -172,7 +172,7 @@ def embed_nodes(adjs, afms):
     nz = nz.view(-1).byte()
     return (
         afms.view(-1, afms.shape[-1])[nz.unsqueeze(1).expand(-1, afms.shape[-1])].view(-1, afms.shape[-1])[:,0].long(),
-        afms.view(-1, afms.shape[2])[:, 1:]
+        afms.view(-1, afms.shape[-1])[nz.unsqueeze(1).expand(-1, afms.shape[-1])].view(-1, afms.shape[-1])[:, 1:],
     )
 
 
@@ -285,26 +285,29 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
 
     x_all, edge_to_ix, edge_word_len, node_to_ix, node_word_len = embed_data(x_all, edge_vocab, node_vocab)
 
-    if 'hiv' == dataset:
-        model = Shi_GCN(n_bfeat=n_bfeat, n_afeat=n_afeat,
-                        n_sgc1_1=n_sgc1_1, n_sgc1_2=n_sgc1_2, n_sgc1_3=n_sgc1_3, n_sgc1_4=n_sgc1_4,
-                        n_sgc1_5=n_sgc1_5,
-                        n_sgc2_1=n_sgc2_1, n_sgc2_2=n_sgc2_2, n_sgc2_3=n_sgc2_3, n_sgc2_4=n_sgc2_4,
-                        n_sgc2_5=n_sgc2_5,
-                        n_den1=n_den1, n_den2=n_den2,
-                        nclass=len(tasks)+1, dropout=dropout,
-                        edge_to_ix=edge_to_ix, edge_word_len=edge_word_len, node_to_ix=node_to_ix,
-                        node_word_len=node_word_len)
-    else:
-        model = Shi_GCN(n_bfeat=n_bfeat, n_afeat=n_afeat,
-                        n_sgc1_1=n_sgc1_1, n_sgc1_2=n_sgc1_2, n_sgc1_3=n_sgc1_3, n_sgc1_4=n_sgc1_4,
-                        n_sgc1_5=n_sgc1_5,
-                        n_sgc2_1=n_sgc2_1, n_sgc2_2=n_sgc2_2, n_sgc2_3=n_sgc2_3, n_sgc2_4=n_sgc2_4,
-                        n_sgc2_5=n_sgc2_5,
-                        n_den1=n_den1, n_den2=n_den2,
-                        nclass=len(tasks), dropout=dropout,
-                        edge_to_ix=edge_to_ix, edge_word_len=edge_word_len, node_to_ix=node_to_ix,
-                        node_word_len=node_word_len, use_att=False)
+    # if 'hiv' == dataset:
+    #     model = Shi_GCN(n_bfeat=n_bfeat, n_afeat=n_afeat,
+    #                     n_sgc1_1=n_sgc1_1, n_sgc1_2=n_sgc1_2, n_sgc1_3=n_sgc1_3, n_sgc1_4=n_sgc1_4,
+    #                     n_sgc1_5=n_sgc1_5,
+    #                     n_sgc2_1=n_sgc2_1, n_sgc2_2=n_sgc2_2, n_sgc2_3=n_sgc2_3, n_sgc2_4=n_sgc2_4,
+    #                     n_sgc2_5=n_sgc2_5,
+    #                     n_den1=n_den1, n_den2=n_den2,
+    #                     nclass=len(tasks)+1, dropout=dropout,
+    #                     edge_to_ix=edge_to_ix, edge_word_len=edge_word_len, node_to_ix=node_to_ix,
+    #                     node_word_len=node_word_len)
+    # else:
+    #     model = Shi_GCN(n_bfeat=n_bfeat, n_afeat=n_afeat,
+    #                     n_sgc1_1=n_sgc1_1, n_sgc1_2=n_sgc1_2, n_sgc1_3=n_sgc1_3, n_sgc1_4=n_sgc1_4,
+    #                     n_sgc1_5=n_sgc1_5,
+    #                     n_sgc2_1=n_sgc2_1, n_sgc2_2=n_sgc2_2, n_sgc2_3=n_sgc2_3, n_sgc2_4=n_sgc2_4,
+    #                     n_sgc2_5=n_sgc2_5,
+    #                     n_den1=n_den1, n_den2=n_den2,
+    #                     nclass=len(tasks), dropout=dropout,
+    #                     edge_to_ix=edge_to_ix, edge_word_len=edge_word_len, node_to_ix=node_to_ix,
+    #                     node_word_len=node_word_len, use_att=False)
+
+    # model = MolGraph(n_afeat, edge_to_ix, edge_word_len, node_to_ix, node_word_len)
+    model = MolGCN(n_afeat, edge_to_ix, edge_word_len, node_to_ix, node_word_len, len(tasks))
 
 
     print("model has {} parameters".format(count_parameters(model)))

@@ -14,6 +14,157 @@ from sympy.ntheory import factorint
 # DoubleTensor = torch.cuda.DoubleTensor if use_cuda else torch.DoubleTensor
 
 
+class MolGraph(nn.Module):
+    def __init__(self, n_afeat, edge_to_ix, edge_word_len, node_to_ix, node_word_len, edge_embedding_dim=5,
+                 node_embedding_dim=5, radius=2, use_att=True):
+        super(MolGraph, self).__init__()
+
+        self.radius = radius
+
+        self.use_att = use_att
+        self.edge_to_ix = edge_to_ix
+        self.edge_word_len = edge_word_len
+        self.edge_embed_len = edge_embedding_dim
+        self.node_to_ix = node_to_ix
+        self.node_word_len = node_word_len
+        self.node_embed_len = node_embedding_dim
+        self.node_attr_len = n_afeat - self.node_word_len + self.node_embed_len
+        self.edge_embeddings = nn.Embedding(len(edge_to_ix), edge_embedding_dim)
+        self.edge_embed_bn = nn.BatchNorm1d(edge_embedding_dim)
+        self.node_embeddings = nn.Embedding(len(node_to_ix), node_embedding_dim)
+        self.node_embed_bn = nn.BatchNorm1d(self.node_attr_len)
+
+        self.conv = {}
+        self.bn = {}
+
+        for rad in range(self.radius):
+            setattr(self, '_'.join(('conv', 'neighbor', str(rad))), nn.Conv2d(self.node_attr_len + self.edge_embed_len,
+                                                                              self.node_attr_len, kernel_size=1,
+                                                                              stride=1,
+                                                                              padding=0, dilation=1, groups=gcd(
+                    self.node_attr_len + self.edge_embed_len, self.node_attr_len), bias=False))
+            self.conv[('neighbor', rad)] = getattr(self, '_'.join(('conv', 'neighbor', str(rad))))
+            setattr(self, '_'.join(('bn', 'neighbor', str(rad))), nn.BatchNorm1d(self.node_attr_len))
+            self.bn[('neighbor', rad)] = getattr(self, '_'.join(('bn', 'neighbor', str(rad))))
+
+
+    def embed_edges(self, adjs, bfts):
+        nz = adjs.view(-1).byte()
+        new_edges = Variable(from_numpy(np.zeros(nz.shape + (self.edge_embed_len,))).float())
+        new_edges[nz.unsqueeze(1).expand(-1, self.edge_embed_len)] = self.edge_embed_bn(self.edge_embeddings(bfts)).view(-1)
+        new_edges = new_edges.view(adjs.shape + (-1,)).permute(0, 3, 1, 2).contiguous()
+        return torch.mul(new_edges, adjs.unsqueeze(1).expand(-1, self.edge_embed_len, -1, -1))
+
+    def embed_nodes(self, adjs, afms, axfms):
+        nz, _ = adjs.max(dim=2)
+        nz = nz.view(-1).byte()
+        new_nodes = Variable(from_numpy(np.zeros(nz.shape + (self.node_attr_len,))).float())
+        nodes = torch.cat((self.node_embeddings(afms), axfms), dim=1)
+        new_nodes[nz.unsqueeze(1).expand(-1, self.node_attr_len)] = self.node_embed_bn(nodes).view(-1)
+
+        new_nodes = new_nodes.view(adjs.shape[0:-1] + (-1,)).permute(0, 2, 1).contiguous()
+
+        return torch.mul(new_nodes, nz.view(adjs.shape[0:-1]).unsqueeze(1).expand(-1, self.node_attr_len, -1).float())
+
+    def get_neighbor_act(self, adj_mat, node_data, edge_data, layer):
+        lna = torch.mul(adj_mat.unsqueeze(1).expand(-1, self.node_attr_len, -1, -1), node_data.unsqueeze(3))
+        lnb = torch.mul(adj_mat.unsqueeze(1).expand((-1, self.edge_embed_len, -1, -1)), edge_data)
+        ln = torch.cat((lna, lnb), dim=1)
+        ln = self.conv[('neighbor', layer)](ln)
+        ln = torch.mul(adj_mat.unsqueeze(1).expand((-1, self.node_attr_len, -1, -1)), ln).permute(0, 2, 3, 1)
+        ln[adj_mat.unsqueeze(3).expand(-1, -1, -1, self.node_attr_len).byte()] = F.relu(
+            self.bn[('neighbor', layer)](
+                ln[adj_mat.unsqueeze(3).expand(-1, -1, -1, self.node_attr_len).byte()].view(-1, self.node_attr_len))
+        )
+        ln = ln.permute(0, 3, 1, 2).contiguous()
+        ln = ln.sum(dim=3)
+        nz, _ = adj_mat.max(dim=2)
+        nz = nz.view(-1).byte()
+        ln = torch.mul(nz.view(adj_mat.shape[0:-1]).unsqueeze(1).expand(-1, self.node_attr_len, -1).float(), ln)
+        return ln
+
+    def next_radius_adj_mat(self, adj_mat, adj_mats):
+        next_adj_mat = torch.bmm(adj_mat, adj_mats[0])
+        next_adj_mat[next_adj_mat != 0] = 1
+        next_adj_mat = next_adj_mat - sum(adj_mats)
+        next_adj_mat = torch.clamp(next_adj_mat - Variable(from_numpy(np.eye(next_adj_mat.size()[1])*next_adj_mat.size()[1]).float()), min=0)
+        return next_adj_mat
+
+    def forward(self, adjs, afms, axfms, bfts):
+        edge_data = self.embed_edges(adjs, bfts)
+        node_data = self.embed_nodes(adjs, afms, axfms)
+
+        adjs_no_diag = torch.clamp(adjs - Variable(from_numpy(np.eye(adjs.size()[1])).float()), min=0)
+
+        nz, _ = adjs.max(dim=2)
+
+        layers = []
+
+        node_current = node_data
+        edge_current = edge_data
+        adj_mat = adjs_no_diag
+        adj_mats = []
+
+        for radius in range(self.radius):
+            layers.append(node_current)
+
+            node_next = node_current
+
+            # get neighbor activation
+            neighbor_next = self.get_neighbor_act(adj_mat, node_current, edge_current, radius)
+            if self.use_att:
+                node_next = torch.mul(node_next, neighbor_next)
+            else:
+                node_next = node_next + neighbor_next
+
+            edge_next = torch.matmul(adj_mat.unsqueeze(1).expand((-1, self.edge_embed_len, -1, -1)), edge_data)
+            adj_mats.append(adj_mat)
+            adj_mat = self.next_radius_adj_mat(adj_mat, adj_mats)
+
+            node_current, edge_current = node_next, edge_next
+
+        return layers
+
+class ConcatModule(nn.Module):
+    def __init__(self):
+        super(ConcatModule, self).__init__()
+
+    def forward(self, inputs):
+        return torch.cat(inputs, dim=1).view(inputs[0].shape[0], len(inputs), inputs[0].shape[1], -1).permute(0, 3, 1, 2).unsqueeze(1)
+
+class MolGCN(nn.Module):
+    def __init__(self, n_afeat, edge_to_ix, edge_word_len, node_to_ix, node_word_len, nclass, edge_embedding_dim=5,
+                 node_embedding_dim=5, radius=2, use_att=True):
+        super(MolGCN, self).__init__()
+        self.radius = radius + 1
+
+        self.molgraph = MolGraph(n_afeat, edge_to_ix, edge_word_len, node_to_ix, node_word_len,edge_embedding_dim, node_embedding_dim, self.radius, use_att)
+        self.concat = ConcatModule()
+
+        self.stage_1 = self._make_layer(1, 16)
+        self.stage_2 = self._make_layer(16, 32)
+        self.stage_3 = self._make_layer(32, 64)
+
+        self.classifier = nn.Linear(64, nclass)
+
+    def _make_layer(self, in_channels, out_channels):
+        return nn.Sequential(
+            nn.Conv3d(in_channels, out_channels, kernel_size=(1, 3, 3), padding=(0, 1, 1), bias=False),
+            nn.ReLU(),
+            nn.Conv3d(out_channels, out_channels, kernel_size=1, stride=(1, 2, 2), bias=False),
+            nn.ReLU()
+        )
+
+    def forward(self, adjs, afms, axfms, bfts):
+        x = self.molgraph(adjs, afms, axfms, bfts)
+        x = self.concat(x)
+        x = self.stage_1(x)
+        x = self.stage_2(x)
+        x = self.stage_3(x)
+        x = x.squeeze(-1).squeeze(-1).sum(dim=2)
+        return self.classifier(x)
+
+
 class Shi_GCN(nn.Module):
     def __init__(self, n_bfeat, n_afeat, n_sgc1_1, n_sgc1_2, n_sgc1_3, n_sgc1_4, n_sgc1_5,
                  n_sgc2_1, n_sgc2_2, n_sgc2_3, n_sgc2_4, n_sgc2_5,
