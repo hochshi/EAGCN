@@ -141,11 +141,14 @@ class MolGCN(nn.Module):
         self.molgraph = MolGraph(n_afeat, edge_to_ix, edge_word_len, node_to_ix, node_word_len,edge_embedding_dim, node_embedding_dim, self.radius, use_att)
         self.concat = ConcatModule()
 
-        self.stage_1 = self._make_layer(1, 16)
-        self.stage_2 = self._make_layer(16, 32)
-        self.stage_3 = self._make_layer(32, 64)
+        no_stages = np.ceil(np.log2(n_afeat - node_word_len + node_embedding_dim))
+        stages_dim = np.power(2, [0] + (np.arange(no_stages) + 4).tolist()).astype(int)
+        stages_dim_tup = zip(stages_dim[:-1], stages_dim[1:])
 
-        self.classifier = nn.Linear(64, nclass)
+        stages = [self._make_layer(*dims) for dims in stages_dim_tup]
+        self.stages = nn.Sequential(*stages)
+
+        self.classifier = nn.Linear(stages_dim[-1], nclass)
 
     def _make_layer(self, in_channels, out_channels):
         return nn.Sequential(
@@ -158,9 +161,7 @@ class MolGCN(nn.Module):
     def forward(self, adjs, afms, axfms, bfts):
         x = self.molgraph(adjs, afms, axfms, bfts)
         x = self.concat(x)
-        x = self.stage_1(x)
-        x = self.stage_2(x)
-        x = self.stage_3(x)
+        x = self.stages(x)
         x = x.squeeze(-1).squeeze(-1).sum(dim=2)
         return self.classifier(x)
 

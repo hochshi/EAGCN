@@ -23,7 +23,7 @@ import matplotlib.pyplot as plt
 from time import gmtime, strftime
 
 # Training settings
-dataset = 'tox21'  # 'tox21', 'hiv', 'pubchem_chembl'
+dataset = 'pubchem_chembl'  # 'tox21', 'hiv', 'pubchem_chembl'
 EAGCN_structure = 'concate'  # 'concate', 'weighted_ave'
 write_file = True
 n_den1, n_den2 = 64, 32
