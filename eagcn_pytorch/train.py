@@ -81,10 +81,10 @@ if dataset == 'pubchem_chembl':
     learning_rate = 0.0005
 
     def output_transform(x):
-        return F.log_softmax(x, dim=1)
+        return x
 
     def loss_func(outputs, labels, weights):
-        return nn.NLLLoss()(outputs, labels.max(dim=1)[1])
+        return nn.CrossEntropyLoss()(outputs, labels.max(dim=1)[1])
 
     def weight_func(BCE_weight, labels):
         normed_BCE_weight = np.array([val[0] for val in BCE_weight.values()], dtype=np.float32)
