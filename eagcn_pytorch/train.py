@@ -328,6 +328,7 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
 
     for epoch in range(num_epochs):
         print("Epoch: [{}/{}]".format(epoch + 1, num_epochs))
+        tot_loss = 0
         for i, (adj, afm, btf, orderAtt, aromAtt, conjAtt, ringAtt, labels) in enumerate(train_loader):
             optimizer.zero_grad()
             model.zero_grad()
@@ -338,6 +339,7 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
             non_nan_num = ((labels == 1).sum() + (labels == 0).sum()).float()
             weights = weight_func(BCE_weight, labels)
             loss = loss_func(output_transform(outputs),labels, weights)
+            tot_loss += loss.data[0]
             loss.backward()
             optimizer.step()
 
@@ -359,7 +361,7 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
                     '\n'
                     'Validation: 0: {}, 5: {}, 10: {}, 30: {}'.format(
                         epoch + 1, num_epochs, i + 1,
-                        math.ceil(len_train / batch_size), loss.data[0],
+                        math.ceil(len_train / batch_size), tot_loss,
                         tpos_0, tpos_5, tpos_10, tpos_30,
                         vpos_0, vpos_5, vpos_10, vpos_30
                     ))
@@ -377,7 +379,7 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
                     'Validation AUC seperate: {}, \n'
                     'Validation AUC total: {} \n'.format(
                         epoch + 1, num_epochs, i + 1,
-                        math.ceil(len_train / batch_size), loss.data[0], \
+                        math.ceil(len_train / batch_size), tot_loss, \
                         train_acc_sep, train_acc_tot, val_acc_sep,
                         val_acc_tot))
                 if write_file:
@@ -392,7 +394,7 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
                             'Validation AUC total: {} \n'.format(
                                 epoch + 1, num_epochs, i + 1,
                                 math.ceil(len_train / batch_size),
-                                loss.data[0], \
+                                tot_loss, \
                                 train_acc_sep, train_acc_tot, val_acc_sep,
                                 val_acc_tot))
                 validation_acc_history.append(val_acc_tot)
