@@ -917,6 +917,7 @@ def set_weight(y_all):
     return(weight_dic)
 
 def weights_init(m):
+    pass
     # classname = m.__class__.__name__
     # if classname.find('Conv') != -1:
     #     # m.weight.data.fill_(1.0)

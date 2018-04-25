@@ -138,18 +138,20 @@ class MolGCN(nn.Module):
         self.radius = radius + 1
 
         # self.molgraph = MolGraph(n_afeat, edge_to_ix, edge_word_len, node_to_ix, node_word_len,edge_embedding_dim, node_embedding_dim, self.radius, use_att)
-        self.molgraph = Shi_GCN(0, n_afeat, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 1, 1, 1, 0.3, edge_to_ix, edge_word_len, node_to_ix, node_word_len)
+        self.molgraph = Shi_GCN(0, n_afeat, 10, 10, 10, 10, 10, 0, 0, 0, 0, 1, 1, 1, 1, 0.3, edge_to_ix, edge_word_len, node_to_ix, node_word_len)
         self.concat = ConcatModule()
 
-        no_stages = np.ceil(np.log2(n_afeat - node_word_len + node_embedding_dim))
-        stages_dim = np.power(2, [0] + (np.arange(no_stages) + 4).tolist()).astype(int)
-        stages_dim[0] = self.radius
-        stages_dim_tup = zip(stages_dim[:-1], stages_dim[1:])
+        # no_stages = np.ceil(np.log2(n_afeat - node_word_len + node_embedding_dim))
+        # stages_dim = np.power(2, [0] + (np.arange(no_stages) + 4).tolist()).astype(int)
+        # stages_dim[0] = self.radius
+        # stages_dim_tup = zip(stages_dim[:-1], stages_dim[1:])
+        #
+        # stages = [self._make_layer(*dims) for dims in stages_dim_tup]
+        # self.stages = nn.Sequential(*stages)
 
-        stages = [self._make_layer(*dims) for dims in stages_dim_tup]
-        self.stages = nn.Sequential(*stages)
+        self.stages = nn.Conv2d(self.radius, 1, 1)
 
-        self.classifier = nn.Linear(stages_dim[-1], nclass)
+        self.classifier = nn.Linear(50, nclass)
 
     def _make_layer(self, in_channels, out_channels):
         return nn.Sequential(
@@ -166,8 +168,8 @@ class MolGCN(nn.Module):
         x = self.concat(x)
         x = self.stages(x)
         # x = x.squeeze(-1).squeeze(-1).sum(dim=2)
-        x = x.sum(dim=-1).view(x.shape[0], -1)
-        return self.classifier(x)
+        # x = x.sum(dim=-1).view(x.shape[0], -1)
+        return self.classifier(x.view(x.shape[0], -1))
 
 
 class Shi_GCN(nn.Module):
@@ -364,9 +366,9 @@ class Shi_GCN(nn.Module):
 
         # node_rep = node_current
         for radius in range(self.radius):
-            # fp = self.get_node_activation(nz, node_current, radius)
-            # fps.append(fp)
-            nodes.append(node_current)
+            fp = self.get_node_activation(nz, node_current, radius)
+            fps.append(fp)
+            # nodes.append(node_current)
 
             node_next = self.get_next_node(nz, node_current, radius)
             neighbor_next = self.get_neighbor_act(adj_mat, node_current, edge_current,
@@ -384,7 +386,7 @@ class Shi_GCN(nn.Module):
         # fps = self.out_bn(fps)
 
         # return self.dense(fps)
-        return nodes
+        return fps
 
     def att_forward(self, adjs, afms, axfms, bfts):  # bfts
         edge_data = self.embed_edges(adjs, bfts)
@@ -407,9 +409,9 @@ class Shi_GCN(nn.Module):
 
         # node_rep = node_current
         for radius in range(self.radius):
-            # fp = self.get_node_activation(nz, node_current, radius)
-            # fps.append(fp)
-            nodes.append(node_current)
+            fp = self.get_node_activation(nz, node_current, radius)
+            fps.append(fp)
+            # nodes.append(node_current)
 
             node_next = self.get_next_node(nz, node_current, radius) # node_current
             neighbor_next = self.get_neighbor_act(adj_mat, node_current, edge_current, radius) # get neighbor activation
@@ -433,7 +435,7 @@ class Shi_GCN(nn.Module):
         #
         # return self.dense(fps).mul(-1).exp().add(1).mul(-1).exp()
         # return self.dense(fps)
-        return nodes
+        return fps
 
         # adjs_afms = torch.mul(adjs_diag.unsqueeze(3).expand(-1, -1, -1, afms.size()[2]), afms.unsqueeze(1)).permute(
         #     0, 3, 1, 2)
