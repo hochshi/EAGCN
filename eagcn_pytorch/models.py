@@ -317,7 +317,8 @@ class Shi_GCN(nn.Module):
         nz, _ = adj_mat.max(dim=2)
         nz = nz.view(-1).byte()
         ln = torch.mul(nz.view(adj_mat.shape[0:-1]).unsqueeze(1).expand(-1, self.node_attr_len, -1).float(),
-                  self.out_softmax(ln))
+                       ln)
+                  # self.out_softmax(ln))
         return ln
 
     def next_radius_adj_mat(self, adj_mat, adj_mats):
