@@ -71,12 +71,13 @@ class MolGraph(nn.Module):
         lnb = torch.mul(adj_mat.unsqueeze(1).expand((-1, self.edge_embed_len, -1, -1)), edge_data)
         ln = torch.cat((lna, lnb), dim=1)
         ln = self.conv[('neighbor', layer)](ln)
-        ln = torch.mul(adj_mat.unsqueeze(1).expand((-1, self.node_attr_len, -1, -1)), ln).permute(0, 2, 3, 1)
-        ln[adj_mat.unsqueeze(3).expand(-1, -1, -1, self.node_attr_len).byte()] = F.relu(
-            self.bn[('neighbor', layer)](
-                ln[adj_mat.unsqueeze(3).expand(-1, -1, -1, self.node_attr_len).byte()].view(-1, self.node_attr_len))
-        )
-        ln = ln.permute(0, 3, 1, 2).contiguous()
+        ln = torch.mul(adj_mat.unsqueeze(1).expand((-1, self.node_attr_len, -1, -1)), ln) # .permute(0, 2, 3, 1)
+        # ln[adj_mat.unsqueeze(3).expand(-1, -1, -1, self.node_attr_len).byte()] = F.relu(
+        #     self.bn[('neighbor', layer)](
+        #         ln[adj_mat.unsqueeze(3).expand(-1, -1, -1, self.node_attr_len).byte()].view(-1, self.node_attr_len))
+        # )
+        # ln = ln.permute(0, 3, 1, 2).contiguous()
+        ln = F.relu(ln)
         ln = ln.sum(dim=3)
         nz, _ = adj_mat.max(dim=2)
         nz = nz.view(-1).byte()
@@ -138,7 +139,8 @@ class MolGCN(nn.Module):
         super(MolGCN, self).__init__()
         self.radius = radius + 1
 
-        self.molgraph = MolGraph(n_afeat, edge_to_ix, edge_word_len, node_to_ix, node_word_len,edge_embedding_dim, node_embedding_dim, self.radius, use_att)
+        # self.molgraph = MolGraph(n_afeat, edge_to_ix, edge_word_len, node_to_ix, node_word_len,edge_embedding_dim, node_embedding_dim, self.radius, use_att)
+        self.molgraph = Shi_GCN(0, n_afeat, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 1, 1, 1, 0.3, edge_to_ix, edge_word_len, node_to_ix, node_word_len)
         self.concat = ConcatModule()
 
         no_stages = np.ceil(np.log2(n_afeat - node_word_len + node_embedding_dim))
@@ -269,10 +271,10 @@ class Shi_GCN(nn.Module):
     def embed_nodes(self, adjs, afms, axfms):
         nz, _ = adjs.max(dim=2)
         nz = nz.view(-1).byte()
-        new_nodes = Variable(from_numpy(np.zeros(nz.shape + (self.node_embed_len,))).float())
-        new_nodes[nz.unsqueeze(1).expand(-1, self.node_embed_len)] = self.node_embeddings(afms).view(-1)
+        new_nodes = Variable(from_numpy(np.zeros(nz.shape + (self.node_attr_len,))).float())
+        new_nodes[nz.unsqueeze(1).expand(-1, self.node_attr_len)] = torch.cat((self.node_embeddings(afms), axfms), dim=1).view(-1) # self.node_embeddings(afms).view(-1)
 
-        new_nodes = torch.cat((new_nodes, axfms), dim=1)
+        # new_nodes = torch.cat((new_nodes, axfms), dim=1)
         new_nodes = F.tanh(self.node_bn(new_nodes.view(adjs.shape[0:-1] + (-1,)).permute(0, 2, 1).contiguous()))
 
         return F.dropout(
@@ -347,6 +349,7 @@ class Shi_GCN(nn.Module):
         nz, _ = adjs.max(dim=2)
 
         fps = []
+        nodes = []
 
         node_current = node_data
         edge_current = edge_data
@@ -358,8 +361,9 @@ class Shi_GCN(nn.Module):
 
         # node_rep = node_current
         for radius in range(self.radius):
-            fp = self.get_node_activation(nz, node_current, radius)
-            fps.append(fp)
+            # fp = self.get_node_activation(nz, node_current, radius)
+            # fps.append(fp)
+            nodes.append(node_current)
 
             node_next = self.get_next_node(nz, node_current, radius)
             neighbor_next = self.get_neighbor_act(adj_mat, node_current, edge_current,
@@ -373,10 +377,11 @@ class Shi_GCN(nn.Module):
 
             node_current, edge_current = node_next, edge_next
 
-        fps = self.fp_func(fps)
-        fps = self.out_bn(fps)
+        # fps = self.fp_func(fps)
+        # fps = self.out_bn(fps)
 
-        return self.dense(fps)
+        # return self.dense(fps)
+        return nodes
 
     def att_forward(self, adjs, afms, axfms, bfts):  # bfts
         edge_data = self.embed_edges(adjs, bfts)
@@ -387,6 +392,7 @@ class Shi_GCN(nn.Module):
         nz, _ = adjs.max(dim=2)
 
         fps = []
+        nodes = []
 
         node_current = node_data
         edge_current = edge_data
@@ -398,8 +404,9 @@ class Shi_GCN(nn.Module):
 
         # node_rep = node_current
         for radius in range(self.radius):
-            fp = self.get_node_activation(nz, node_current, radius)
-            fps.append(fp)
+            # fp = self.get_node_activation(nz, node_current, radius)
+            # fps.append(fp)
+            nodes.append(node_current)
 
             node_next = self.get_next_node(nz, node_current, radius) # node_current
             neighbor_next = self.get_neighbor_act(adj_mat, node_current, edge_current, radius) # get neighbor activation
@@ -417,12 +424,13 @@ class Shi_GCN(nn.Module):
             # node_rep = node_current + neighbor_current
             # node_rep = torch.mul(node_current, neighbor_current)
 
-        fps = self.fp_func(fps)
-
-        fps = self.out_bn(fps)
-
+        # fps = self.fp_func(fps)
+        #
+        # fps = self.out_bn(fps)
+        #
         # return self.dense(fps).mul(-1).exp().add(1).mul(-1).exp()
-        return self.dense(fps)
+        # return self.dense(fps)
+        return nodes
 
         # adjs_afms = torch.mul(adjs_diag.unsqueeze(3).expand(-1, -1, -1, afms.size()[2]), afms.unsqueeze(1)).permute(
         #     0, 3, 1, 2)
