@@ -276,7 +276,7 @@ class Shi_GCN(nn.Module):
         nz = adjs.view(-1).byte()
         new_edges = Variable(from_numpy(np.zeros(nz.shape + (self.edge_embed_len,))).float())
         new_edges[nz.unsqueeze(1).expand(-1, self.edge_embed_len)] = self.edge_embeddings(bfts).view(-1)
-        new_edges = F.relu(new_edges.view(adjs.shape + (-1,)).permute(0, 3, 1, 2).contiguous())
+        new_edges = F.tanh(new_edges.view(adjs.shape + (-1,)).permute(0, 3, 1, 2).contiguous())
         return F.dropout(
             torch.mul(new_edges, adjs.unsqueeze(1).expand(-1, self.edge_embed_len, -1, -1)),
             p=self.dropout,
@@ -290,7 +290,7 @@ class Shi_GCN(nn.Module):
         new_nodes[nz.unsqueeze(1).expand(-1, self.node_attr_len)] = torch.cat((self.node_embeddings(afms), axfms), dim=1).view(-1) # self.node_embeddings(afms).view(-1)
 
         # new_nodes = torch.cat((new_nodes, axfms), dim=1)
-        new_nodes = F.relu(new_nodes.view(adjs.shape[0:-1] + (-1,)).permute(0, 2, 1).contiguous())
+        new_nodes = F.tanh(new_nodes.view(adjs.shape[0:-1] + (-1,)).permute(0, 2, 1).contiguous())
 
         return F.dropout(
             torch.mul(new_nodes, nz.view(adjs.shape[0:-1]).unsqueeze(1).expand(-1, self.node_attr_len, -1).float()),
@@ -308,17 +308,17 @@ class Shi_GCN(nn.Module):
         out = self.conv[('out', layer)](node_data)
         out = torch.mul(out, nz.unsqueeze(1).expand(-1, self.ngc1, -1))
         out = torch.sum(out, dim=2)
-        return F.dropout(F.relu(out), p=self.dropout, training=self.training)
+        return F.dropout(F.tanh(out), p=self.dropout, training=self.training)
 
     def get_next_node(self, nz, node_data, layer):
         out = self.conv[('node', layer)](node_data)
         out = torch.mul(out, nz.unsqueeze(1).expand(-1, self.node_attr_len, -1))
-        return F.dropout(F.relu(out), p=self.dropout, training=self.training)
+        return F.dropout(F.tanh(out), p=self.dropout, training=self.training)
 
     def get_next_edge(self, adj, edge_data, layer):
         out = self.conv[('edge', layer)](edge_data)
         out = torch.mul(adj.unsqueeze(1).expand(-1, self.edge_embed_len, -1, -1), out)
-        return F.dropout(F.relu(out), p=self.dropout, training=self.training)
+        return F.dropout(F.tanh(out), p=self.dropout, training=self.training)
 
     def get_neighbor_act(self, adj_mat, node_data, edge_data, layer):
         lna = torch.mul(adj_mat.unsqueeze(1).expand(-1, self.node_attr_len, -1, -1), node_data.unsqueeze(3))
@@ -332,7 +332,7 @@ class Shi_GCN(nn.Module):
         ln = torch.mul(nz.view(adj_mat.shape[0:-1]).unsqueeze(1).expand(-1, self.node_attr_len, -1).float(),
                        ln)
                   # self.out_softmax(ln))
-        return F.dropout(F.relu(ln), p=self.dropout, training=self.training)
+        return F.dropout(F.tanh(ln), p=self.dropout, training=self.training)
 
     def next_radius_adj_mat(self, adj_mat, adj_mats):
         next_adj_mat = torch.bmm(adj_mat, adj_mats[0])
