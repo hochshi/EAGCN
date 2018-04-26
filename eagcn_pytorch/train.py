@@ -99,7 +99,7 @@ early_stop_diff = 0.11
 
 experiment_date = strftime("%b_%d_%H:%M", gmtime()) + 'N'
 print(experiment_date)
-torch.manual_seed(random_state)
+# torch.manual_seed(random_state)
 # use_cuda = torch.cuda.is_available()
 # FloatTensor = torch.cuda.FloatTensor if use_cuda else torch.FloatTensor
 # LongTensor = torch.cuda.LongTensor if use_cuda else torch.LongTensor
