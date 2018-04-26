@@ -131,6 +131,25 @@ class ConcatModule(nn.Module):
         return torch.cat(inputs, dim=1).view(inputs[0].shape[0], len(inputs), inputs[0].shape[1], -1)
         # return torch.cat(inputs, dim=1).view(inputs[0].shape[0], len(inputs), inputs[0].shape[1], -1).permute(0, 3, 1, 2).unsqueeze(1)
 
+
+class ConvFp(nn.Module):
+    def __init__(self, depth):
+        super(ConvFp, self).__init__()
+        self.depth = depth
+        self.conv = nn.Conv1d(depth, depth-1, kernel_size=1, bias=False)
+
+    def forward(self, x):
+        return self.conv(x.view(x.shape[0], self.depth, -1))
+
+
+class BatchNormFp(nn.Module):
+    def __init__(self, fp_len, depth):
+        super(BatchNormFp, self).__init__()
+        self.bn = nn.BatchNorm1d(depth*fp_len)
+
+    def forward(self, x):
+        return self.bn(x.view(x.shape[0], -1))
+
 class MolGCN(nn.Module):
     def __init__(self, n_afeat, edge_to_ix, edge_word_len, node_to_ix, node_word_len, nclass, edge_embedding_dim=5,
                  node_embedding_dim=5, radius=2, use_att=True):
@@ -149,18 +168,24 @@ class MolGCN(nn.Module):
         # stages = [self._make_layer(*dims) for dims in stages_dim_tup]
         # self.stages = nn.Sequential(*stages)
 
-        self.stages = nn.Sequential(
-            nn.Conv2d(self.radius, 1, 1, bias=False)
-            # nn.Conv2d(self.radius, 2, 1, bias=False),
-            # nn.BatchNorm2d(2),
-            # nn.ReLU(),
-            # nn.Conv2d(2, 1, 1, bias=False),
-        )
+        # self.stages = nn.Sequential(
+        #     # nn.Conv2d(self.radius, 1, 1, bias=False)
+        #     nn.Conv2d(self.radius, 2, 1, bias=False),
+        #     # nn.BatchNorm2d(2),
+        #     nn.ReLU(),
+        #     nn.Dropout2d(),
+        #     nn.Conv2d(2, 1, 1, bias=False),
+        # )
+
+        stages = []
+        for i in range(self.radius, 1, -1):
+            stages = stages + [BatchNormFp(50, i), ConvFp(i), nn.ReLU(), nn.Dropout()]
+        self.stages = nn.Sequential(*stages)
+
         self.fp_stages = nn.Sequential(
             nn.BatchNorm1d(50),
             nn.ReLU()
         )
-
 
         self.classifier = nn.Linear(50, nclass)
 
@@ -277,12 +302,14 @@ class Shi_GCN(nn.Module):
         nz = adjs.view(-1).byte()
         new_edges = Variable(from_numpy(np.zeros(nz.shape + (self.edge_embed_len,))).float())
         new_edges[nz.unsqueeze(1).expand(-1, self.edge_embed_len)] = self.edge_embeddings(bfts).view(-1)
-        new_edges = F.relu(new_edges.view(adjs.shape + (-1,)).permute(0, 3, 1, 2).contiguous())
-        return F.dropout(
-            torch.mul(new_edges, adjs.unsqueeze(1).expand(-1, self.edge_embed_len, -1, -1)),
-            p=self.dropout,
-            training=self.training
-        )
+        new_edges = new_edges.view(adjs.shape + (-1,)).permute(0, 3, 1, 2).contiguous()
+        return torch.mul(new_edges, adjs.unsqueeze(1).expand(-1, self.edge_embed_len, -1, -1))
+        # new_edges = F.relu(new_edges.view(adjs.shape + (-1,)).permute(0, 3, 1, 2).contiguous())
+        # return F.dropout(
+        #     torch.mul(new_edges, adjs.unsqueeze(1).expand(-1, self.edge_embed_len, -1, -1)),
+        #     p=self.dropout,
+        #     training=self.training
+        # )
 
     def embed_nodes(self, adjs, afms, axfms):
         nz, _ = adjs.max(dim=2)
@@ -290,14 +317,16 @@ class Shi_GCN(nn.Module):
         new_nodes = Variable(from_numpy(np.zeros(nz.shape + (self.node_attr_len,))).float())
         new_nodes[nz.unsqueeze(1).expand(-1, self.node_attr_len)] = torch.cat((self.node_embeddings(afms), axfms), dim=1).view(-1) # self.node_embeddings(afms).view(-1)
 
+        return torch.mul(new_nodes.view(adjs.shape[0:-1] + (-1,)).permute(0, 2, 1).contiguous(),
+                         nz.view(adjs.shape[0:-1]).unsqueeze(1).expand(-1, self.node_attr_len, -1).float())
         # new_nodes = torch.cat((new_nodes, axfms), dim=1)
-        new_nodes = F.relu(new_nodes.view(adjs.shape[0:-1] + (-1,)).permute(0, 2, 1).contiguous())
+        # new_nodes = F.relu(new_nodes.view(adjs.shape[0:-1] + (-1,)).permute(0, 2, 1).contiguous())
 
-        return F.dropout(
-            torch.mul(new_nodes, nz.view(adjs.shape[0:-1]).unsqueeze(1).expand(-1, self.node_attr_len, -1).float()),
-            p=self.dropout,
-            training=self.training
-        )
+        # return F.dropout(
+        #     torch.mul(new_nodes, nz.view(adjs.shape[0:-1]).unsqueeze(1).expand(-1, self.node_attr_len, -1).float()),
+        #     p=self.dropout,
+        #     training=self.training
+        # )
 
     def get_self(self, nz, node_data, layer):
         return (
@@ -307,33 +336,37 @@ class Shi_GCN(nn.Module):
 
     def get_node_activation(self, nz, node_data, layer):
         out = self.conv[('out', layer)](node_data)
+        out = F.dropout(F.relu(out), p=self.dropout, training=self.training)
         out = torch.mul(out, nz.unsqueeze(1).expand(-1, self.ngc1, -1))
         out = torch.sum(out, dim=2)
-        return F.dropout(F.relu(out), p=self.dropout, training=self.training)
+        return out
 
     def get_next_node(self, nz, node_data, layer):
-        out = self.conv[('node', layer)](node_data)
-        out = torch.mul(out, nz.unsqueeze(1).expand(-1, self.node_attr_len, -1))
-        return F.dropout(F.relu(out), p=self.dropout, training=self.training)
+        return node_data
+        # out = self.conv[('node', layer)](node_data)
+        # out = torch.mul(out, nz.unsqueeze(1).expand(-1, self.node_attr_len, -1))
+        # return F.dropout(F.relu(out), p=self.dropout, training=self.training)
 
     def get_next_edge(self, adj, edge_data, layer):
-        out = self.conv[('edge', layer)](edge_data)
-        out = torch.mul(adj.unsqueeze(1).expand(-1, self.edge_embed_len, -1, -1), out)
-        return F.dropout(F.relu(out), p=self.dropout, training=self.training)
+        return edge_data
+        # out = self.conv[('edge', layer)](edge_data)
+        # out = torch.mul(adj.unsqueeze(1).expand(-1, self.edge_embed_len, -1, -1), out)
+        # return F.dropout(F.relu(out), p=self.dropout, training=self.training)
 
     def get_neighbor_act(self, adj_mat, node_data, edge_data, layer):
         lna = torch.mul(adj_mat.unsqueeze(1).expand(-1, self.node_attr_len, -1, -1), node_data.unsqueeze(3))
         lnb = torch.mul(adj_mat.unsqueeze(1).expand((-1, self.edge_embed_len, -1, -1)), edge_data)
         ln = torch.cat((lna, lnb), dim=1)
         ln = self.conv[('neighbor', layer)](ln)
+        ln = F.dropout2d(F.relu(ln), p=self.dropout, training=self.training)
         ln = torch.mul(adj_mat.unsqueeze(1).expand((-1, self.node_attr_len, -1, -1)), ln)
         ln = ln.sum(dim=3)
-        nz, _ = adj_mat.max(dim=2)
-        nz = nz.view(-1).byte()
-        ln = torch.mul(nz.view(adj_mat.shape[0:-1]).unsqueeze(1).expand(-1, self.node_attr_len, -1).float(),
-                       ln)
+        # nz, _ = adj_mat.max(dim=2)
+        # nz = nz.view(-1).byte()
+        # ln = torch.mul(nz.view(adj_mat.shape[0:-1]).unsqueeze(1).expand(-1, self.node_attr_len, -1).float(),
+        #                ln)
                   # self.out_softmax(ln))
-        return F.dropout(F.relu(ln), p=self.dropout, training=self.training)
+        return ln
 
     def next_radius_adj_mat(self, adj_mat, adj_mats):
         next_adj_mat = torch.bmm(adj_mat, adj_mats[0])
