@@ -221,6 +221,9 @@ class Shi_GCN(nn.Module):
                                                                          bias=False)))
             self.conv[('out', rad)] = getattr(self, '_'.join(('conv', 'out', str(rad))))
 
+            setattr(self, '_'.join(('bn', 'out', str(rad))), to_hw(nn.BatchNorm1d(ngc1, affine=False)))
+            self.bn[('out', rad)] = getattr(self, '_'.join(('bn', 'out',str(rad))))
+
             setattr(self, '_'.join(('conv', 'neighbor', str(rad))), to_hw(nn.Conv2d(self.node_attr_len + self.edge_embed_len,
                                                                               self.node_attr_len, kernel_size=1,
                                                                               stride=1,
@@ -268,7 +271,7 @@ class Shi_GCN(nn.Module):
         nz = adjs.view(-1).byte()
         new_edges = Variable(from_numpy(np.zeros(nz.shape + (self.edge_embed_len,))).float())
         new_edges[nz.unsqueeze(1).expand(-1, self.edge_embed_len)] = self.edge_embeddings(bfts).view(-1)
-        new_edges = F.tanh(new_edges.view(adjs.shape + (-1,)).permute(0, 3, 1, 2).contiguous())
+        new_edges = new_edges.view(adjs.shape + (-1,)).permute(0, 3, 1, 2).contiguous()
         return F.dropout(
             torch.mul(new_edges, adjs.unsqueeze(1).expand(-1, self.edge_embed_len, -1, -1)),
             p=self.dropout,
@@ -282,7 +285,7 @@ class Shi_GCN(nn.Module):
         new_nodes[nz.unsqueeze(1).expand(-1, self.node_attr_len)] = torch.cat((self.node_embeddings(afms), axfms), dim=1).view(-1) # self.node_embeddings(afms).view(-1)
 
         # new_nodes = torch.cat((new_nodes, axfms), dim=1)
-        new_nodes = F.tanh(new_nodes.view(adjs.shape[0:-1] + (-1,)).permute(0, 2, 1).contiguous())
+        new_nodes = new_nodes.view(adjs.shape[0:-1] + (-1,)).permute(0, 2, 1).contiguous()
 
         return F.dropout(
             torch.mul(new_nodes, nz.view(adjs.shape[0:-1]).unsqueeze(1).expand(-1, self.node_attr_len, -1).float()),
@@ -300,7 +303,7 @@ class Shi_GCN(nn.Module):
         out = self.conv[('out', layer)](node_data)
         out = torch.mul(out, nz.unsqueeze(1).expand(-1, self.ngc1, -1))
         out = torch.sum(out, dim=2)
-        return F.tanh(out)
+        return F.dropout(F.relu(self.bn[('out', layer)](out)), p=self.dropout, training=self.training)
 
     def get_next_node(self, nz, node_data, layer):
         out = self.conv[('node', layer)](node_data)
