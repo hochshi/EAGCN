@@ -133,7 +133,7 @@ class ConcatModule(nn.Module):
 
 class MolGCN(nn.Module):
     def __init__(self, n_afeat, edge_to_ix, edge_word_len, node_to_ix, node_word_len, nclass, edge_embedding_dim=5,
-                 node_embedding_dim=5, radius=2, use_att=True):
+                 node_embedding_dim=5, radius=3, use_att=True):
         super(MolGCN, self).__init__()
         self.radius = radius + 1
 
@@ -171,8 +171,8 @@ class MolGCN(nn.Module):
         x = self.stages(x)
         # x = x.squeeze(-1).squeeze(-1).sum(dim=2)
         # x = x.sum(dim=-1).view(x.shape[0], -1)
-        x = self.bn(x.view(x.shape[0], -1))
-        return self.classifier(x)
+        # x = self.bn(x.view(x.shape[0], -1))
+        return self.classifier(x.view(x.shape[0], -1))
 
 class NodeBatchNorm(nn.Module):
     def __init__(self, attr_len):
@@ -205,7 +205,7 @@ class Shi_GCN(nn.Module):
                  n_sgc2_1, n_sgc2_2, n_sgc2_3, n_sgc2_4, n_sgc2_5,
                  n_den1, n_den2,
                  nclass, dropout, edge_to_ix, edge_word_len, node_to_ix, node_word_len, use_att=True, molfp_mode='sum',
-                 hidden_size=50, radius=2,
+                 hidden_size=50, radius=3,
                  edge_embedding_dim=5, node_embedding_dim=5):
         super(Shi_GCN, self).__init__()
 
@@ -302,7 +302,7 @@ class Shi_GCN(nn.Module):
         #     p=self.dropout,
         #     training=self.training
         # )
-        return F.relu(self.edge_bn(torch.mul(new_edges, adjs.unsqueeze(1).expand(-1, self.edge_embed_len, -1, -1)), adjs))
+        return torch.mul(new_edges, adjs.unsqueeze(1).expand(-1, self.edge_embed_len, -1, -1))
 
     def embed_nodes(self, adjs, afms, axfms):
         nz, _ = adjs.max(dim=2)
@@ -318,7 +318,7 @@ class Shi_GCN(nn.Module):
         #     p=self.dropout,
         #     training=self.training
         # )
-        return F.relu(self.node_bn(torch.mul(new_nodes, nz.view(adjs.shape[0:-1]).unsqueeze(1).expand(-1, self.node_attr_len, -1).float()), nz.float()))
+        return torch.mul(new_nodes, nz.view(adjs.shape[0:-1]).unsqueeze(1).expand(-1, self.node_attr_len, -1).float())
 
     def get_self(self, nz, node_data, layer):
         return (
@@ -334,19 +334,19 @@ class Shi_GCN(nn.Module):
         # Should I drop the dropout? It seems to cause issues
         # F.dropout is bad?
         # return F.dropout(F.relu(self.bn[('out', layer)](out)), p=self.dropout, training=self.training)
-        return F.relu(self.bn[('out', layer)](out))
+        return out
 
     def get_next_node(self, nz, node_data, layer):
         out = self.conv[('node', layer)](node_data)
         out = torch.mul(out, nz.unsqueeze(1).expand(-1, self.node_attr_len, -1))
         # return out
-        return F.relu(self.node_bn(out, nz))
+        return out
 
     def get_next_edge(self, adj, edge_data, layer):
         out = self.conv[('edge', layer)](edge_data)
         out = torch.mul(adj.unsqueeze(1).expand(-1, self.edge_embed_len, -1, -1), out)
         # return out
-        return F.relu(self.edge_bn(out, adj))
+        return out
 
     def get_neighbor_act(self, adj_mat, node_data, edge_data, layer):
         lna = torch.mul(adj_mat.unsqueeze(1).expand(-1, self.node_attr_len, -1, -1), node_data.unsqueeze(3))
@@ -361,7 +361,7 @@ class Shi_GCN(nn.Module):
                        ln)
                   # self.out_softmax(ln))
         # return ln
-        return F.relu(self.node_bn(ln, nz))
+        return ln
 
     def next_radius_adj_mat(self, adj_mat, adj_mats):
         next_adj_mat = torch.bmm(adj_mat, adj_mats[0])
