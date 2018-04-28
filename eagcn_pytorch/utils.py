@@ -48,18 +48,33 @@ def load_data(dataset, path = '../data/'):
     mol_to_graph_transform = None
     parameter_holder = None
     edge_words, node_words = None, None
-    if dataset == 'tox21':
-        x_all, y_all, target, sizes, edge_words, node_words = load_dc_tox21(path=path, keep_nan=True)
-    elif dataset == 'hiv':
-        x_all, y_all, target, sizes, edge_words, node_words = load_hiv(path=path, keep_nan=True)
-    elif dataset == 'lipo':
-        x_all, y_all, target, sizes = load_lipo()
-    elif dataset == 'freesolv':
-        x_all, y_all, target, sizes = load_freesolv()
-    elif dataset == 'esol':
-        x_all, y_all, target, sizes = load_esol()
-    elif dataset == 'pubchem_chembl':
-        x_all, y_all, target, sizes, mol_to_graph_transform, parameter_holder, edge_words, node_words = load_pubchem(path=path, keep_nan=False)
+    print('Loading {} dataset...'.format(dataset))
+    try:  # with open('{}{}{}'.format(path, dataset,'.npz'), 'r') as data_fid:
+        loaded_data = np.load('{}{}{}'.format(path, dataset, '.npz'))
+        x_all, y_all, target, sizes, mol_to_graph_transform, parameter_holder, edge_words, node_words = (loaded_data['x_all'], loaded_data['y_all'], loaded_data['target'], loaded_data['mol_sizes'],
+                None, None,
+                set(loaded_data['edge_words'].tolist()), set(loaded_data['node_words'].tolist()))
+        # return (loaded_data['x_all'], loaded_data['y_all'], loaded_data['target'], loaded_data['mol_sizes'],
+        #         None, None,
+        #         set(loaded_data['edge_words'].tolist()), set(loaded_data['node_words'].tolist()))
+    except IOError:
+        print('Failed Loading pickled {} dataset, creating from scratch.'.format(dataset))
+        if dataset == 'tox21':
+            x_all, y_all, target, sizes, edge_words, node_words = load_dc_tox21(path=path, keep_nan=True)
+        elif dataset == 'hiv':
+            x_all, y_all, target, sizes, edge_words, node_words = load_hiv(path=path, keep_nan=True)
+        elif dataset == 'lipo':
+            x_all, y_all, target, sizes = load_lipo()
+        elif dataset == 'freesolv':
+            x_all, y_all, target, sizes = load_freesolv()
+        elif dataset == 'esol':
+            x_all, y_all, target, sizes = load_esol()
+        elif dataset == 'pubchem_chembl':
+            x_all, y_all, target, sizes, mol_to_graph_transform, parameter_holder, edge_words, node_words = load_pubchem(path=path, keep_nan=False)
+
+        np.savez('{}{}{}'.format(path, dataset, '.npz'), x_all=x_all, y_all=y_all, target=target, mol_sizes=sizes,
+                 edge_words=np.array(list(edge_words)), node_words=np.array(list(node_words)))
+    print('Done.')
     return (x_all, y_all, target, sizes, mol_to_graph_transform, parameter_holder, edge_words, node_words)
 
 def load_lipo(path='../data/', dataset = 'Lipophilicity.csv', bondtype_freq = 10,
@@ -486,14 +501,14 @@ class AtomFeatureNormalizer(object):
 
 def load_pubchem(path='../data/', dataset = 'small_batch_test.csv', bondtype_freq =20, atomtype_freq =10, keep_nan=True): # dataset = 'pubchem_chembl_bestmapping.csv'
     print('Loading {} dataset...'.format(dataset))
-    try: #with open('{}{}{}'.format(path, dataset,'.npz'), 'r') as data_fid:
-        loaded_data = np.load('{}{}{}'.format(path, dataset,'.npz'))
-        print('Done.')
-        return (loaded_data['x_all'], loaded_data['y_all'], loaded_data['target'], loaded_data['mol_sizes'],
-                None, None,
-                set(loaded_data['edge_words'].tolist()), set(loaded_data['node_words'].tolist()))
-    except IOError:
-        print('Failed Loading pickled {} dataset...'.format(dataset))
+    # try: #with open('{}{}{}'.format(path, dataset,'.npz'), 'r') as data_fid:
+    #     loaded_data = np.load('{}{}{}'.format(path, dataset,'.npz'))
+    #     print('Done.')
+    #     return (loaded_data['x_all'], loaded_data['y_all'], loaded_data['target'], loaded_data['mol_sizes'],
+    #             None, None,
+    #             set(loaded_data['edge_words'].tolist()), set(loaded_data['node_words'].tolist()))
+    # except IOError:
+    #     print('Failed Loading pickled {} dataset...'.format(dataset))
 
     data = []
     with open('{}{}'.format(path, dataset), 'r') as data_fid:
