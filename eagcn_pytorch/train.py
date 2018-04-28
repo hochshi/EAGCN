@@ -217,12 +217,12 @@ def test_model(loader, model, tasks):
     out_value_dic = {}
     true_value_dic = {}
     correct = [0]*4
-    total = Variable(LongTensor([0]))
-    true_positive = Variable(LongTensor([0]))
-    true_negative = Variable(LongTensor([0]))
-    precision_total = Variable(LongTensor([0]))
-    recall_total = Variable(LongTensor([0]))
-    specificity_total = Variable(LongTensor([0]))
+    total = Variable(FloatTensor([0]))
+    true_positive = Variable(FloatTensor([0]))
+    true_negative = Variable(FloatTensor([0]))
+    precision_total = Variable(FloatTensor([0]))
+    recall_total = Variable(FloatTensor([0]))
+    specificity_total = Variable(FloatTensor([0]))
     for adj, afm, btf, orderAtt, aromAtt, conjAtt, ringAtt, labels in loader:
         afm, axfm = embed_nodes(adj, afm)
         btf = embed_edges(adj, btf)
@@ -231,11 +231,11 @@ def test_model(loader, model, tasks):
             labels = Variable(labels).squeeze(1).long()
             outputs = output_transform(outputs).max(dim=1)[1]
 
-            true_positive += outputs.dot(labels)
-            true_negative += (0 == outputs).long().dot((0 == labels).long())
-            precision_total += outputs.sum()
-            recall_total += labels.sum()
-            specificity_total += (labels.shape[0] - labels.sum())
+            true_positive += outputs.float().dot(labels)
+            true_negative += (0 == outputs).float().dot((0 == labels).float())
+            precision_total += outputs.sum().float()
+            recall_total += labels.sum().float()
+            specificity_total += (labels.shape[0] - labels.sum()).float()
             total += labels.shape[0]
         elif calcpos:
             smprobs = output_transform(outputs)
