@@ -55,7 +55,7 @@ if dataset == 'hiv':
     weight_decay = 0.00001  # L-2 Norm
     dropout = 0.3
     random_state = 1
-    num_epochs = 50
+    num_epochs = 100
     learning_rate = 0.0005
 
     def output_transform(x):
@@ -231,7 +231,7 @@ def test_model(loader, model, tasks):
             labels = Variable(labels).squeeze(1).long()
             outputs = output_transform(outputs).max(dim=1)[1]
 
-            true_positive += outputs.float().dot(labels)
+            true_positive += outputs.float().dot(labels.float())
             true_negative += (0 == outputs).float().dot((0 == labels).float())
             precision_total += outputs.sum().float()
             recall_total += labels.sum().float()
@@ -474,7 +474,7 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
         print(
             'Test Precision: {}, Recall: {}, Specificity: {}, Accuracy: {}'.format(tpre, trec, tspe, tacc)
         )
-    if calcpos:
+    elif calcpos:
         tpos_0, tpos_5, tpos_10, tpos_30 = test_model(test_loader, model, tasks, calcpos=True)
         print(
             'Test: 1: {}, 5: {}, 10: {}, 30: {}'.format(
