@@ -62,13 +62,20 @@ if dataset == 'hiv':
         return F.log_softmax(x, dim=1)
 
     def loss_func(outputs, labels, weights):
-        return F.nll_loss(outputs, labels.squeeze(1).long())
+        return F.nll_loss(outputs, labels.squeeze(1).long(), weight=weights, size_average=False)
         # return nn.CrossEntropyLoss()(outputs, labels.squeeze(1).long())
 
     def weight_func(BCE_weight, labels):
-        normed_BCE_weight = np.array([val[0] for val in BCE_weight.values()], dtype=np.float32)
-        normed_BCE_weight = np.true_divide(normed_BCE_weight, sum(normed_BCE_weight))
-        return from_numpy(normed_BCE_weight)
+        minibatch_size = labels.shape[0]
+        true_labels = labels.sum().data[0]
+        false_labels = minibatch_size - true_labels
+        if true_labels > 0:
+            return from_numpy(1 - np.array([false_labels, true_labels])/minibatch_size).float() * minibatch_size
+        else:
+            return from_numpy(np.array([1, 1])).float()
+        # normed_BCE_weight = np.array([val[0] for val in BCE_weight.values()], dtype=np.float32)
+        # normed_BCE_weight = np.true_divide(normed_BCE_weight, sum(normed_BCE_weight))
+        # return from_numpy(normed_BCE_weight)
 
 if dataset == 'pubchem_chembl':
     n_sgc1_1, n_sgc1_2, n_sgc1_3, n_sgc1_4, n_sgc1_5 = 20, 20, 20, 20, 20
