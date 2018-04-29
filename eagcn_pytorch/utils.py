@@ -22,6 +22,13 @@ LongTensor = torch.cuda.LongTensor if use_cuda else torch.LongTensor
 IntTensor = torch.cuda.IntTensor if use_cuda else torch.IntTensor
 DoubleTensor = torch.cuda.DoubleTensor if use_cuda else torch.DoubleTensor
 
+if use_cuda:
+    def from_numpy(x):
+        return torch.from_numpy(x).cuda()
+else:
+    def from_numpy(x):
+        return torch.from_numpy(x)
+
 def load_data(dataset, path = '../data/'):
     if dataset == 'tox21':
         x_all, y_all, target, sizes = load_dc_tox21(path=path, keep_nan=True)

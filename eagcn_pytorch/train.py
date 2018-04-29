@@ -23,7 +23,7 @@ import matplotlib.pyplot as plt
 from time import gmtime, strftime
 
 # Training settings
-dataset = 'tox21'   # 'tox21', 'hiv'
+dataset = 'hiv'   # 'tox21', 'hiv'
 EAGCN_structure = 'concate' #  'concate', 'weighted_ave'
 write_file = True
 n_den1, n_den2= 64, 32
@@ -68,57 +68,52 @@ if dataset == 'tox21':
 if dataset == 'hiv':
     all_tasks = ['HIV_active']
 
+def weight_func(BCE_weight, labels):
+    minibatch_size = labels.shape[0]
+    true_labels = labels.sum().data[0]
+    false_labels = minibatch_size - true_labels
+    if true_labels > 0:
+        return from_numpy(minibatch_size - np.array([false_labels, true_labels])).float()
+    else:
+        return from_numpy(np.array([1, 1])).float()
+
 def test_model(loader, model, tasks):
     """
     Help function that tests the model's performance on a dataset
     @param: loader - data loader for the dataset to test against
     """
-    true_value = []
-    all_out = []
     model.eval()
-    out_value_dic = {}
-    true_value_dic = {}
+
+    total = Variable(FloatTensor([0]))
+    true_positive = Variable(FloatTensor([0]))
+    true_negative = Variable(FloatTensor([0]))
+    precision_total = Variable(FloatTensor([0]))
+    recall_total = Variable(FloatTensor([0]))
+    specificity_total = Variable(FloatTensor([0]))
+
     for adj, afm, btf, orderAtt, aromAtt, conjAtt, ringAtt, labels in loader:
         adj_batch, afm_batch, btf_batch, label_batch = Variable(adj), Variable(afm), Variable(btf), Variable(labels)
         orderAtt_batch, aromAtt_batch, conjAtt_batch, ringAtt_batch = Variable(orderAtt), Variable(aromAtt), Variable(
             conjAtt), Variable(ringAtt)
         outputs = model(adj_batch, afm_batch, btf_batch, orderAtt_batch, aromAtt_batch, conjAtt_batch, ringAtt_batch)
-        probs = F.sigmoid(outputs)
+        label_batch = label_batch.squeeze(1).long()
+        outputs = F.log_softmax(outputs, dim=1).max(dim=1)[1]
 
-        if use_cuda:
-            out_list = probs.cpu().data.view(-1).numpy().tolist()
-            all_out.extend(out_list)
-            label_list = labels.cpu().numpy().tolist()
-            true_value.extend([item for sublist in label_list for item in sublist])
-            out_sep_list = probs.cpu().data.view(-1, len(tasks)).numpy().tolist()
-        else:
-            out_list = probs.data.view(-1).numpy().tolist()
-            all_out.extend(out_list)
-            label_list = labels.numpy().tolist()
-            true_value.extend([item for sublist in label_list for item in sublist])
-            out_sep_list = probs.data.view(-1, len(tasks)).numpy().tolist()
+        true_positive += outputs.float().dot(label_batch.float())
+        true_negative += (0 == outputs).float().dot((0 == label_batch).float())
+        precision_total += outputs.sum().float()
+        recall_total += label_batch.sum().float()
+        specificity_total += (label_batch.shape[0] - label_batch.sum()).float()
+        total += label_batch.shape[0]
 
-        for i in range(0, len(out_sep_list)):
-            for j in list(range(0, len(tasks))):
-                if label_list[i][j] == -1:
-                    #print('Ignore {},{} case: nan'.format(i,j))
-                    continue
-                if j not in true_value_dic.keys():
-                    out_value_dic[j] = [out_sep_list[i][j]]
-                    true_value_dic[j] = [int(label_list[i][j])]
-                else:
-                    out_value_dic[j].extend([out_sep_list[i][j]])
-                    true_value_dic[j].extend([int(label_list[i][j])])
     model.train()
 
-    aucs = []
-    for key in list(range(0, len(tasks))):
-        fpr, tpr, threshold = metrics.roc_curve(true_value_dic[key], out_value_dic[key], pos_label=1)
-        auc = metrics.auc(fpr, tpr)
-        if math.isnan(auc):
-            print('the {}th label has no postive samples, max value {}'.format(key, max(true_value_dic[key])))
-        aucs.append(auc)
-    return (aucs, sum(aucs)/len(aucs))
+    return (
+        true_positive.float().div(precision_total.float() + 1e-5).data[0],
+        true_positive.float().div(recall_total.float() + 1e-5).data[0],
+        true_negative.float().div(specificity_total.float() + 1e-5).data[0],
+        (true_positive.float() + true_negative.float()).div(total.float() + 1e-5).data[0]
+    )
 
 def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
     x_all, y_all, target, sizes = load_data(dataset)
@@ -140,7 +135,7 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
                             n_sgc2_1=n_sgc2_1, n_sgc2_2=n_sgc2_2, n_sgc2_3=n_sgc2_3, n_sgc2_4=n_sgc2_4,
                             n_sgc2_5=n_sgc2_5,
                             n_den1=n_den1, n_den2=n_den2,
-                            nclass=len(tasks), dropout=dropout)
+                            nclass=len(tasks)+1, dropout=dropout)
     else:
         model = Weighted_GCN(n_bfeat=n_bfeat, n_afeat=25,
                              n_sgc1_1 = n_sgc1_1, n_sgc1_2 = n_sgc1_2, n_sgc1_3= n_sgc1_3, n_sgc1_4 = n_sgc1_4, n_sgc1_5 = n_sgc1_5,
@@ -166,7 +161,7 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
     del x_train, y_train, x_val, y_val
 
     for epoch in range(num_epochs):
-
+        tot_loss = 0
         for i, (adj, afm, btf, orderAtt, aromAtt, conjAtt, ringAtt, labels) in enumerate(train_loader):
             adj_batch, afm_batch, btf_batch, label_batch = Variable(adj), Variable(afm), Variable(btf), Variable(labels)
             orderAtt_batch, aromAtt_batch, conjAtt_batch, ringAtt_batch = Variable(orderAtt), Variable(
@@ -175,72 +170,37 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
             optimizer.zero_grad()
             outputs = model(adj_batch, afm_batch, btf_batch, orderAtt_batch, aromAtt_batch, conjAtt_batch,
                             ringAtt_batch)
-            weights = Variable(weight_tensor(BCE_weight, labels=label_batch))
-            non_nan_num = Variable(FloatTensor([(labels == 1).sum() + (labels == 0).sum()]))
-            loss = F.binary_cross_entropy_with_logits(outputs.view(-1), \
-                                                      label_batch.float().view(-1), \
-                                                      weight=weights, size_average=False) / non_nan_num
+            weights = weight_func(BCE_weight, label_batch)
+            loss = nn.CrossEntropyLoss(weight=weights)(outputs, label_batch.squeeze(1).long())
+            tot_loss += loss.data[0]
             loss.backward()
             optimizer.step()
 
         # report performance
         if True:
-            train_acc_sep, train_acc_tot = test_model(train_loader, model, tasks)
-            val_acc_sep, val_acc_tot = test_model(validation_loader, model, tasks)
+            print("Calculating train precision and recall...")
+            tpre, trec, tspe, tacc = test_model(train_loader, model, tasks)
+            print("Calculating validation precision and recall...")
+            vpre, vrec, vspe, vacc = test_model(validation_loader, model, tasks)
             print(
                 'Epoch: [{}/{}], '
                 'Step: [{}/{}], '
-                'Loss: {}, \n'
-                'Train AUC seperate: {}, \n'
-                'Train AUC total: {}, \n'
-                'Validation AUC seperate: {}, \n'
-                'Validation AUC total: {} \n'.format(
+                'Loss: {},'
+                '\n'
+                'Train: Precision: {}, Recall: {}, Specificity: {}, Accuracy: {}'
+                '\n'
+                'Validation: Precision: {}, Recall: {}, Specificity: {}, Accuracy: {}'.format(
                     epoch + 1, num_epochs, i + 1,
-                    math.ceil(len_train / batch_size), loss.data[0], \
-                    train_acc_sep, train_acc_tot, val_acc_sep,
-                    val_acc_tot))
-            if write_file:
-                with open(file_name, 'a') as fp:
-                    fp.write(
-                        'Epoch: [{}/{}], '
-                        'Step: [{}/{}], '
-                        'Loss: {}, \n'
-                        'Train AUC seperate: {}, \n'
-                        'Train AUC total: {}, \n'
-                        'Validation AUC seperate: {}, \n'
-                        'Validation AUC total: {} \n'.format(
-                            epoch + 1, num_epochs, i + 1,
-                            math.ceil(len_train / batch_size),
-                            loss.data[0], \
-                            train_acc_sep, train_acc_tot, val_acc_sep,
-                            val_acc_tot))
-            validation_acc_history.append(val_acc_tot)
-            # check if we need to earily stop the model
-            stop_training = earily_stop(validation_acc_history, tasks, early_stop_step_single,
-                                        early_stop_step_multi, early_stop_required_progress) and (train_acc_tot > 0.99)
-            if stop_training:  # early stopping
-                print("{}th epoch: earily stop triggered".format(epoch))
-                if write_file:
-                    with open(file_name, 'a') as fp:
-                        fp.write("{}th epoch: earily stop triggered".format(epoch))
-                break
+                    math.ceil(len_train / batch_size), tot_loss,
+                    tpre, trec, tspe, tacc,
+                    vpre, vrec, vspe, vacc
+                ))
 
-        # because of the the nested loop
-        if stop_training:
-            break
-
-    test_auc_sep, test_auc_tot = test_model(test_loader, model, tasks)
-    torch.save(model.state_dict(), '{}.pkl'.format(file_name))
-    torch.save(model, '{}.pt'.format(file_name))
-
-    print('AUC of the model on the test set for single task: {}\n'
-          'AUC of the model on the test set for all tasks: {}'.format(test_auc_sep, test_auc_tot))
-    if write_file:
-        with open(file_name, 'a') as fp:
-            fp.write('AUC of the model on the test set for single task: {}\n'
-                     'AUC of the model on the test set for all tasks: {}'.format(test_auc_sep, test_auc_tot))
-
-    return(test_auc_tot)
+    print("Calculating train precision and recall...")
+    tpre, trec, tspe, tacc = test_model(test_loader, model, tasks)
+    print(
+        'Test Precision: {}, Recall: {}, Specificity: {}, Accuracy: {}'.format(tpre, trec, tspe, tacc)
+    )
 
 tasks = all_tasks # [task]
 print(' learning_rate: {},\n batch_size: {}, \n '
