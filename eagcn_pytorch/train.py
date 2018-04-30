@@ -299,7 +299,7 @@ def test_model(loader, model, tasks):
             return (None, None, None, None)
         # return tuple(np.true_divide(true_positive, [pred_total, label_total]).tolist())
     elif calcpos:
-        return tuple(np.true_divide(correct, total).tolist())
+        return np.true_divide(correct,total.data[0]).tolist()
     else:
         aucs = []
         for key in list(range(0, len(tasks))):
@@ -410,10 +410,10 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
                     ))
             elif calcpos:
                 print("Calculating train pos...")
-                tpos_0, tpos_5, tpos_10, tpos_30 = test_model(train_loader, model, tasks, calcpos=True)
+                tpos_0, tpos_5, tpos_10, tpos_30 = test_model(train_loader, model, tasks)
                 acc_history[:, 0, epoch] = [tpos_0, tpos_5, tpos_10, tpos_30]
                 print("Calculating validation pos...")
-                vpos_0, vpos_5, vpos_10, vpos_30 = test_model(validation_loader, model, tasks, calcpos=True)
+                vpos_0, vpos_5, vpos_10, vpos_30 = test_model(validation_loader, model, tasks)
                 acc_history[:, 1, epoch] = [vpos_0, vpos_5, vpos_10, vpos_30]
                 print(
                     'Epoch: [{}/{}], '
@@ -483,7 +483,7 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
             'Test Precision: {}, Recall: {}, Specificity: {}, Accuracy: {}'.format(tpre, trec, tspe, tacc)
         )
     elif calcpos:
-        tpos_0, tpos_5, tpos_10, tpos_30 = test_model(test_loader, model, tasks, calcpos=True)
+        tpos_0, tpos_5, tpos_10, tpos_30 = test_model(test_loader, model, tasks)
         print(
             'Test: 1: {}, 5: {}, 10: {}, 30: {}'.format(
                 tpos_0, tpos_5, tpos_10, tpos_30
