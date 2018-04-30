@@ -18,6 +18,8 @@ class MolGraph(nn.Module):
     def __init__(self, n_afeat, fp_len, edge_to_ix, edge_word_len, node_to_ix, node_word_len, radius, edge_embedding_dim, node_embedding_dim, use_att):
         super(MolGraph, self).__init__()
 
+        self.act_att = Parameter(FloatTensor([0.5]))
+
         self.radius = radius
         self.use_att = use_att
         self.fp_len = fp_len
@@ -190,8 +192,8 @@ class MolGraph(nn.Module):
             node_next = self.get_next_node(nz, node_current, radius) # node_current
             neighbor_next = self.get_neighbor_act(adj_mat, node_current, edge_current, radius) # get neighbor activation
             # TODO: Should let the machine decide how to take the neighbor data into account
-            # by summing? by multiplying?
-            node_next = torch.mul(node_next, neighbor_next)
+            # TODO: by summing activation? by multiplying (attention)?
+            node_next = self.act_att*torch.mul(node_next, neighbor_next) + (1-self.act_att)*neighbor_next
 
             edge_next = torch.matmul(adj_mat.unsqueeze(1).expand((-1, self.edge_embed_len, -1, -1)), edge_current)
             adj_mats.append(adj_mat)
