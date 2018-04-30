@@ -913,7 +913,7 @@ def weight_tensor(weights, labels):
 def set_weight(y_all):
     weight_dic = {}
     pos_dic ={}
-    neg_dic = {}
+    # neg_dic = {}
     for i in range(len(y_all)):
         for j in range(len(y_all[0])):
             if y_all[i][j] == 1:
@@ -921,15 +921,16 @@ def set_weight(y_all):
                     pos_dic[j] = 1
                 else:
                     pos_dic[j] += 1
-            elif y_all[i][j] == 0:
-                if neg_dic.get(j) is None:
-                    neg_dic[j] = 1
-                else:
-                    neg_dic[j] += 1
+            # elif y_all[i][j] == 0:
+            #     if neg_dic.get(j) is None:
+            #         neg_dic[j] = 1
+            #     else:
+            #         neg_dic[j] += 1
 
-    for key in pos_dic.keys():
-        weight_dic[key] = [5000/pos_dic[key], 5000/neg_dic[key]]
-    return(weight_dic)
+    # for key in pos_dic.keys():
+        # weight_dic[key] = [5000/pos_dic[key], 5000/neg_dic[key]]
+        # weight_dic[key] = pos_dic[key]
+    return(pos_dic)
 
 def weights_init(m):
     pass
