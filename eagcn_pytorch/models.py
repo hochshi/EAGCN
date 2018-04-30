@@ -52,13 +52,21 @@ class MolGraph(nn.Module):
             setattr(self, '_'.join(('bn', 'out', str(rad))), to_hw(nn.BatchNorm1d(fp_len, affine=False)))
             self.bn[('out', rad)] = getattr(self, '_'.join(('bn', 'out', str(rad))))
 
-            setattr(self, '_'.join(('conv', 'neighbor', str(rad))),
+            setattr(self, '_'.join(('conv', 'neighbor', 'att', str(rad))),
                     to_hw(nn.Conv2d(self.node_attr_len + self.edge_embed_len,
                                     self.node_attr_len, kernel_size=1,
                                     stride=1,
                                     padding=0, dilation=1, groups=gcd(
                             self.node_attr_len + self.edge_embed_len, self.node_attr_len), bias=False)))
-            self.conv[('neighbor', rad)] = getattr(self, '_'.join(('conv', 'neighbor', str(rad))))
+            self.conv[('neighbor', 'att', rad)] = getattr(self, '_'.join(('conv', 'neighbor', 'att', str(rad))))
+
+            setattr(self, '_'.join(('conv', 'neighbor', 'act', str(rad))),
+                    to_hw(nn.Conv2d(self.node_attr_len + self.edge_embed_len,
+                                    self.node_attr_len, kernel_size=1,
+                                    stride=1,
+                                    padding=0, dilation=1, groups=gcd(
+                            self.node_attr_len + self.edge_embed_len, self.node_attr_len), bias=False)))
+            self.conv[('neighbor', 'act', rad)] = getattr(self, '_'.join(('conv', 'neighbor', 'act', str(rad))))
 
             setattr(self, '_'.join(('conv', 'edge', str(rad))),
                     to_hw(nn.Conv2d(self.edge_embed_len, self.edge_embed_len,
@@ -98,25 +106,26 @@ class MolGraph(nn.Module):
     def get_next_node(self, nz, node_data, layer):
         out = self.conv[('node', layer)](node_data)
         # out = torch.mul(out, nz.unsqueeze(1).expand(-1, self.node_attr_len, -1))
-        return out
+        return out+node_data
 
     def get_next_edge(self, adj, edge_data, layer):
         out = self.conv[('edge', layer)](edge_data)
         # out = torch.mul(adj.unsqueeze(1).expand(-1, self.edge_embed_len, -1, -1), out)
-        return out
+        return out+edge_data
 
     def get_neighbor_act(self, adj_mat, node_data, edge_data, layer):
         lna = torch.mul(adj_mat.unsqueeze(1).expand(-1, self.node_attr_len, -1, -1), node_data.unsqueeze(3))
         lnb = torch.mul(adj_mat.unsqueeze(1).expand((-1, self.edge_embed_len, -1, -1)), edge_data)
         ln = torch.cat((lna, lnb), dim=1)
-        ln = self.conv[('neighbor', layer)](ln)
+        att = self.conv[('neighbor', 'att', layer)](ln)
+        act = self.conv[('neighbor', 'act', layer)](ln)
         # ln = torch.mul(adj_mat.unsqueeze(1).expand((-1, self.node_attr_len, -1, -1)), ln)
         # TODO: We Should let the machine decide how it would like to summarize the neighbor data
-        ln = ln.sum(dim=2)
+        # ln = ln.sum(dim=2)
         # nz, _ = adj_mat.max(dim=2)
         # nz = nz.view(-1)
         # ln = torch.mul(nz.view(adj_mat.shape[0:-1]).unsqueeze(1).expand(-1, self.node_attr_len, -1), ln)
-        return ln
+        return (att.sum(dim=2), act.sum(dim=2))
 
     def next_radius_adj_mat(self, adj_mat, adj_mats):
         next_adj_mat = torch.bmm(adj_mat, adj_mats[0])
@@ -190,10 +199,10 @@ class MolGraph(nn.Module):
             fps.append(fp)
 
             node_next = self.get_next_node(nz, node_current, radius) # node_current
-            neighbor_next = self.get_neighbor_act(adj_mat, node_current, edge_current, radius) # get neighbor activation
+            neighbor_att, neighbor_act = self.get_neighbor_act(adj_mat, node_current, edge_current, radius) # get neighbor activation
             # TODO: Should let the machine decide how to take the neighbor data into account
             # TODO: by summing activation? by multiplying (attention)?
-            node_next = self.act_att*torch.mul(node_next, neighbor_next) + (1-self.act_att)*neighbor_next
+            node_next = self.act_att*torch.mul(node_next, neighbor_att) + (1-self.act_att)*neighbor_act
 
             edge_next = torch.matmul(adj_mat.unsqueeze(1).expand((-1, self.edge_embed_len, -1, -1)), edge_current)
             adj_mats.append(adj_mat)
