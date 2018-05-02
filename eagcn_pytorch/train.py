@@ -232,12 +232,14 @@ def test_model(loader, model, tasks, reportFps=False):
     recall_total = Variable(FloatTensor([0]))
     specificity_total = Variable(FloatTensor([0]))
     fps = []
+    fp_labels = []
     for adj, afm, btf, orderAtt, aromAtt, conjAtt, ringAtt, labels in loader:
         afm, axfm = embed_nodes(adj, afm)
         btf = embed_edges(adj, btf)
         outputs, batch_fps = model(Variable(adj), Variable(afm), Variable(axfm), Variable(btf))
         if reportFps:
             fps.append(to_numpy(batch_fps.data))
+            fp_labels.append(to_numpy(labels.max(dim=1)))
         if precision_recall:
             labels = Variable(labels).squeeze(1).long()
             outputs = output_transform(outputs).max(dim=1)[1]
@@ -303,7 +305,7 @@ def test_model(loader, model, tasks, reportFps=False):
         # return tuple(np.true_divide(true_positive, [pred_total, label_total]).tolist())
     elif calcpos:
         if reportFps:
-            return np.true_divide(correct,total.data[0]).tolist(), fps
+            return np.true_divide(correct,total.data[0]).tolist(), fps, fp_labels
         return np.true_divide(correct,total.data[0]).tolist()
     else:
         aucs = []
@@ -488,7 +490,7 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
             'Test Precision: {}, Recall: {}, Specificity: {}, Accuracy: {}'.format(tpre, trec, tspe, tacc)
         )
     elif calcpos:
-        tpos_0, tpos_5, tpos_10, tpos_30, fps = test_model(test_loader, model, tasks)
+        tpos_0, tpos_5, tpos_10, tpos_30, fps, fp_labels = test_model(test_loader, model, tasks)
         print(
             'Test: 1: {}, 5: {}, 10: {}, 30: {}'.format(
                 tpos_0, tpos_5, tpos_10, tpos_30
@@ -498,10 +500,10 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
 
         if write_file:
             with open(file_name, 'a') as fp:
-                fp.write('Test: 1: {}, 5: {}, 10: {}, 30: {}'.format(
+                fp.write('\n Test: 1: {}, 5: {}, 10: {}, 30: {}'.format(
                 tpos_0, tpos_5, tpos_10, tpos_30
             ))
-            np.savez('{}_outputs'.format(file_name), fps=fps)
+            np.savez('{}_outputs'.format(file_name), fps=fps, fp_labels=fp_labels)
             np.savez('{}_acc_history'.format(file_name), acc_history=acc_history)
         return (tpos_0, tpos_5, tpos_10, tpos_30)
     else:
