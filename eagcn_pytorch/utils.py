@@ -29,6 +29,9 @@ if use_cuda:
     def from_numpy(x):
         return torch.from_numpy(x).cuda()
 
+    def to_numpy(x):
+        return x.cpu().numpy()
+
     def to_hw(x):
         return x.cuda()
 else:
@@ -39,6 +42,9 @@ else:
 
     def from_numpy(x):
         return torch.from_numpy(x)
+
+    def to_numpy(x):
+        return x.numpy()
 
     def to_hw(x):
         return x.cpu()
