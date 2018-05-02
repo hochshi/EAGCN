@@ -262,7 +262,7 @@ class MolGCN(nn.Module):
         # x = x.squeeze(-1).squeeze(-1).sum(dim=2)
         # x = x.sum(dim=-1).view(x.shape[0], -1)
         # x = self.bn(x.view(x.shape[0], -1))
-        return self.classifier(x.view(x.shape[0], -1))
+        return self.classifier(x.view(x.shape[0], -1)), x
 
 class NodeBatchNorm(nn.Module):
     def __init__(self, attr_len):

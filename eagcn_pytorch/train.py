@@ -214,7 +214,7 @@ def split_data(x_all, y_all, target, mol_to_graph_transform, random_state=random
     return (train_loader, validation_loader, test_loader, BCE_weight, len_train)
 
 
-def test_model(loader, model, tasks):
+def test_model(loader, model, tasks, reportFps=False):
     """
     Help function that tests the model's performance on a dataset
     @param: loader - data loader for the dataset to test against
@@ -231,10 +231,15 @@ def test_model(loader, model, tasks):
     precision_total = Variable(FloatTensor([0]))
     recall_total = Variable(FloatTensor([0]))
     specificity_total = Variable(FloatTensor([0]))
+    fps = []
+    fp_labels = []
     for adj, afm, btf, orderAtt, aromAtt, conjAtt, ringAtt, labels in loader:
         afm, axfm = embed_nodes(adj, afm)
         btf = embed_edges(adj, btf)
-        outputs = model(Variable(adj), Variable(afm), Variable(axfm), Variable(btf))
+        outputs, batch_fps = model(Variable(adj), Variable(afm), Variable(axfm), Variable(btf))
+        if reportFps:
+            fps.append(to_numpy(batch_fps.data))
+            fp_labels.append(to_numpy(labels.max(dim=1)[1]))
         if precision_recall:
             labels = Variable(labels).squeeze(1).long()
             outputs = output_transform(outputs).max(dim=1)[1]
@@ -299,6 +304,8 @@ def test_model(loader, model, tasks):
             return (None, None, None, None)
         # return tuple(np.true_divide(true_positive, [pred_total, label_total]).tolist())
     elif calcpos:
+        if reportFps:
+            return (np.true_divide(correct, total.data[0]).tolist(), fps, fp_labels)
         return np.true_divide(correct,total.data[0]).tolist()
     else:
         aucs = []
@@ -379,7 +386,7 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
             model.zero_grad()
             afm, axfm = embed_nodes(adj, afm)
             btf = embed_edges(adj, btf)
-            outputs = model(Variable(adj), Variable(afm), Variable(axfm), Variable(btf))
+            outputs, _ = model(Variable(adj), Variable(afm), Variable(axfm), Variable(btf))
             labels = Variable(labels.float())
             non_nan_num = ((labels == 1).sum() + (labels == 0).sum()).float()
             weights = weight_func(BCE_weight, labels)
@@ -483,7 +490,8 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
             'Test Precision: {}, Recall: {}, Specificity: {}, Accuracy: {}'.format(tpre, trec, tspe, tacc)
         )
     elif calcpos:
-        tpos_0, tpos_5, tpos_10, tpos_30 = test_model(test_loader, model, tasks)
+        pos_data, fps, fp_labels = test_model(test_loader, model, tasks, reportFps=True)
+        tpos_0, tpos_5, tpos_10, tpos_30 = pos_data
         print(
             'Test: 1: {}, 5: {}, 10: {}, 30: {}'.format(
                 tpos_0, tpos_5, tpos_10, tpos_30
@@ -496,6 +504,7 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
                 fp.write('Test: 1: {}, 5: {}, 10: {}, 30: {}'.format(
                 tpos_0, tpos_5, tpos_10, tpos_30
             ))
+            np.savez('{}_outputs'.format(file_name), fps=fps, fp_labels=fp_labels)
             np.savez('{}_acc_history'.format(file_name), acc_history=acc_history)
         return (tpos_0, tpos_5, tpos_10, tpos_30)
     else:
