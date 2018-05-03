@@ -75,7 +75,7 @@ def load_data(dataset, path = '../data/'):
             x_all, y_all, target, sizes = load_freesolv()
         elif dataset == 'esol':
             x_all, y_all, target, sizes = load_esol()
-        elif dataset == 'pubchem_chembl':
+        elif dataset == 'pubchem_chembl' or dataset == 'small_batch_test':
             x_all, y_all, target, sizes, mol_to_graph_transform, parameter_holder, edge_words, node_words = load_pubchem(path=path, keep_nan=False)
 
         np.savez('{}{}{}'.format(path, dataset, '.npz'), x_all=x_all, y_all=y_all, target=target, mol_sizes=sizes,
@@ -579,7 +579,8 @@ def load_pubchem(path='../data/', dataset = 'small_batch_test.csv', bondtype_fre
              adjTensor_AromAtt, adjTensor_ConjAtt, adjTensor_RingAtt, edge_word_set, node_word_set) = molToGraph(mol, filted_bondtype_list_order,
                                                                                    filted_atomtype_list_order,
                                                                                    molecular_attributes=True).dump_as_matrices_Att()
-            x_all.append([afm, adj, bft, adjTensor_OrderAtt, adjTensor_AromAtt, adjTensor_ConjAtt, adjTensor_RingAtt])
+            # x_all.append([afm, adj, bft, adjTensor_OrderAtt, adjTensor_AromAtt, adjTensor_ConjAtt, adjTensor_RingAtt])
+            x_all.append([afm, adj, bft, adjTensor_OrderAtt, adjTensor_AromAtt, adjTensor_ConjAtt, adjTensor_RingAtt, inchi])
             # We dont save the matrices - only the smiles. Transforming all mols takes too much memory
             # Hopefully we can pickle MolGraph and AtomFeatureNormalizer then we can skip this step
             # x_all.append(inchi)
@@ -604,7 +605,7 @@ def load_pubchem(path='../data/', dataset = 'small_batch_test.csv', bondtype_fre
     print('Done.')
     # mol_to_graph_transform = MolGraph(MolFromInchi, filted_atomtype_list_order, filted_bondtype_list_order, afnorm)
     # with open('{}{}{}'.format(path, dataset, '.npz'), 'w') as data_fid:
-    np.savez('{}{}{}'.format(path, dataset, '.npz'), x_all=x_all, y_all=y_all, target=target, mol_sizes=mol_sizes, edge_words = np.array(list(edge_words)), node_words = np.array(list(node_words)))
+    # np.savez('{}{}{}'.format(path, dataset, '.npz'), x_all=x_all, y_all=y_all, target=target, mol_sizes=mol_sizes, edge_words = np.array(list(edge_words)), node_words = np.array(list(node_words)))
     return (x_all, y_all, target, mol_sizes, None, None, edge_words, node_words)
 
 def data_filter(x_all, y_all, target, sizes, tasks, size_cutoff=1000):

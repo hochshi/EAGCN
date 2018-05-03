@@ -14,6 +14,15 @@ from sympy.ntheory import factorint
 # DoubleTensor = torch.cuda.DoubleTensor if use_cuda else torch.DoubleTensor
 
 
+class ECFPClass(nn.Module):
+    def __init__(self, fp_len, nclass):
+        super(ECFPClass, self).__init__()
+
+        self.classifier = nn.Linear(fp_len, nclass)
+
+    def forward(self, x):
+        return self.classifier(x)
+
 class MolGraph(nn.Module):
     def __init__(self, n_afeat, fp_len, edge_to_ix, edge_word_len, node_to_ix, node_word_len, radius, edge_embedding_dim, node_embedding_dim, use_att):
         super(MolGraph, self).__init__()
