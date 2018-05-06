@@ -70,7 +70,7 @@ x_all, y_all, target, sizes, mol_to_graph_transform, parameter_holder, edge_voca
 from rdkit import DataStructs
 fps = [AllChem.GetMorganFingerprintAsBitVect(MolFromInchi(mol_dat[-1]), 2, nBits=nbits) for mol_dat in x_all]
 len_train = len(fps)
-labels = y_all
+labels = np.array(y_all)
 np_fps = []
 for fp in fps:
   arr = np.zeros((1,))
