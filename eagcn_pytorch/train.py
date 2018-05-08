@@ -417,7 +417,9 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
                     ))
             elif calcpos:
                 print("Calculating train pos...")
-                tpos_0, tpos_5, tpos_10, tpos_30 = test_model(train_loader, model, tasks)
+                tpos_0, tpos_5, tpos_10, tpos_30 = 0, 0, 0, 0
+                if epoch > 1 and 0 == (epoch % 10):
+                    tpos_0, tpos_5, tpos_10, tpos_30 = test_model(train_loader, model, tasks)
                 acc_history[:, 0, epoch] = [tpos_0, tpos_5, tpos_10, tpos_30]
                 print("Calculating validation pos...")
                 vpos_0, vpos_5, vpos_10, vpos_30 = test_model(validation_loader, model, tasks)

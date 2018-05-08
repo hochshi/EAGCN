@@ -47,11 +47,11 @@ class MolGraph(nn.Module):
                                     bias=False)))
             self.conv[('node', rad)] = getattr(self, '_'.join(('conv', 'node', str(rad))))
 
-            # setattr(self, '_'.join(('conv', 'out', str(rad))), to_hw(nn.Conv1d(self.node_attr_len, fp_len, kernel_size=1,
-            #                                                                    stride=1, padding=0, dilation=1,
-            #                                                                    groups=gcd(self.node_attr_len, fp_len),
-            #                                                                    bias=False)))
-            # self.conv[('out', rad)] = getattr(self, '_'.join(('conv', 'out', str(rad))))
+            setattr(self, '_'.join(('conv', 'out', str(rad))), to_hw(nn.Conv1d(self.node_attr_len, fp_len, kernel_size=1,
+                                                                               stride=1, padding=0, dilation=1,
+                                                                               groups=gcd(self.node_attr_len, fp_len),
+                                                                               bias=False)))
+            self.conv[('out', rad)] = getattr(self, '_'.join(('conv', 'out', str(rad))))
 
             setattr(self, '_'.join(('bn', 'out', str(rad))), to_hw(nn.BatchNorm1d(fp_len, affine=False)))
             self.bn[('out', rad)] = getattr(self, '_'.join(('bn', 'out', str(rad))))
@@ -100,12 +100,14 @@ class MolGraph(nn.Module):
     def get_node_activation(self, nz, node_data, layer):
         out = self.conv[('out', layer)](node_data)
         # out = torch.mul(out, nz.unsqueeze(1).expand(-1, self.fp_len, -1))
+        # TODO: Should we average the atoms or sum them? summing weights bigger molecules
         out = torch.sum(out, dim=2)
         # F.elu seems to work better here? is it because I don't normalize the the node and edges?
         # Should I drop the dropout? It seems to cause issues
         # F.dropout is bad?
         # return F.dropout(F.relu(self.bn[('out', layer)](out)), p=self.dropout, training=self.training)
-        return out
+        # return out
+        return out.div(nz.sum(dim=1).unsqueeze(1))
 
     def get_next_node(self, nz, node_data, layer):
         out = self.conv[('node', layer)](node_data)
@@ -125,11 +127,14 @@ class MolGraph(nn.Module):
         act = self.conv[('neighbor', 'act', layer)](ln)
         # ln = torch.mul(adj_mat.unsqueeze(1).expand((-1, self.node_attr_len, -1, -1)), ln)
         # TODO: We Should let the machine decide how it would like to summarize the neighbor data
+        # TODO: Should we average over neighbors or sum them?
         # ln = ln.sum(dim=2)
         # nz, _ = adj_mat.max(dim=2)
         # nz = nz.view(-1)
         # ln = torch.mul(nz.view(adj_mat.shape[0:-1]).unsqueeze(1).expand(-1, self.node_attr_len, -1), ln)
-        return (att.sum(dim=2), act.sum(dim=2))
+        avg = adj_mat.sum(dim=2).unsqueeze(1)
+        return (att.sum(dim=2).div(avg+1e-6), act.sum(dim=2).div(avg+1e-6))
+        # return (att.sum(dim=2), act.sum(dim=2))
 
     def next_radius_adj_mat(self, adj_mat, adj_mats):
         next_adj_mat = torch.bmm(adj_mat, adj_mats[0])
@@ -201,8 +206,8 @@ class MolGraph(nn.Module):
         # TODO: Should we conv node_data (node_current) for next iteration? - Yes for now
 
         for radius in range(self.radius):
-            # fp = self.get_node_activation(nz, node_current, radius)
-            # fps.append(fp)
+            fp = self.get_node_activation(nz, node_current, radius)
+            fps.append(fp)
 
             node_next = self.get_next_node(nz, node_current, radius) # node_current
             neighbor_att, neighbor_act = self.get_neighbor_act(adj_mat, node_current, edge_current, radius) # get neighbor activation
@@ -217,7 +222,7 @@ class MolGraph(nn.Module):
 
             node_current, edge_current = node_next, edge_next
 
-        return self.get_node_activation(nz, node_current, -1)
+        return fps
 
 class ConcatModule(nn.Module):
     def __init__(self):
@@ -235,7 +240,7 @@ class MolGCN(nn.Module):
 
         self.molgraph = MolGraph(n_afeat, fp_len, edge_to_ix, edge_word_len, node_to_ix, node_word_len, self.radius, edge_embedding_dim, node_embedding_dim, use_att)
         # self.molgraph = Shi_GCN(0, n_afeat, 10, 10, 10, 10, 10, 0, 0, 0, 0, 1, 1, 1, 1, 0.3, edge_to_ix, edge_word_len, node_to_ix, node_word_len)
-        # self.concat = ConcatModule()
+        self.concat = ConcatModule()
 
         # no_stages = np.ceil(np.log2(n_afeat - node_word_len + node_embedding_dim))
         # stages_dim = np.power(2, [0] + (np.arange(no_stages) + 4).tolist()).astype(int)
@@ -245,7 +250,7 @@ class MolGCN(nn.Module):
         # stages = [self._make_layer(*dims) for dims in stages_dim_tup]
         # self.stages = nn.Sequential(*stages)
 
-        # self.stages = nn.Conv2d(self.radius, 1, 1, bias=False)
+        self.stages = nn.Conv2d(self.radius, 1, 1, bias=False)
 
         self.bn = nn.BatchNorm1d(fp_len, affine=False)
 
@@ -263,8 +268,8 @@ class MolGCN(nn.Module):
 
     def forward(self, adjs, afms, axfms, bfts):
         x = self.molgraph(adjs, afms, axfms, bfts)
-        # x = self.concat(x)
-        # x = self.stages(x)
+        x = self.concat(x)
+        x = self.stages(x)
         # x = x.squeeze(-1).squeeze(-1).sum(dim=2)
         # x = x.sum(dim=-1).view(x.shape[0], -1)
         # x = self.bn(x.view(x.shape[0], -1))
