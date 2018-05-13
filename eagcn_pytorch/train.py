@@ -219,6 +219,7 @@ def test_model(loader, model, tasks, reportFps=False):
     Help function that tests the model's performance on a dataset
     @param: loader - data loader for the dataset to test against
     """
+
     true_value = []
     all_out = []
     model.eval()
@@ -378,6 +379,52 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
                                                                                      random_state=random_state)
     del x_all, y_all, target
 
+    import signal
+    import sys
+    def signal_handler(signal, frame):
+        print('You pressed Ctrl+C!')
+        if precision_recall:
+            print("Calculating train precision and recall...")
+            tpre, trec, tspe, tacc = test_model(test_loader, model, tasks)
+            print(
+                'Test Precision: {}, Recall: {}, Specificity: {}, Accuracy: {}'.format(tpre, trec, tspe, tacc)
+            )
+        elif calcpos:
+            print("Calculating Top-K position...")
+            pos_data, fps, fp_labels = test_model(test_loader, model, tasks, reportFps=True)
+            tpos_0, tpos_5, tpos_10, tpos_30 = pos_data
+            print(
+                'Test: 1: {}, 5: {}, 10: {}, 30: {}'.format(
+                    tpos_0, tpos_5, tpos_10, tpos_30
+                ))
+            torch.save(model.state_dict(), '{}.pkl'.format(file_name))
+            torch.save(model, '{}.pt'.format(file_name))
+
+            if write_file:
+                with open(file_name, 'a') as fp:
+                    fp.write('\n Test: 1: {}, 5: {}, 10: {}, 30: {}'.format(
+                        tpos_0, tpos_5, tpos_10, tpos_30
+                    ))
+                np.savez('{}_outputs'.format(file_name), fps=fps, fp_labels=fp_labels)
+                np.savez('{}_acc_history'.format(file_name), acc_history=acc_history)
+            # return (tpos_0, tpos_5, tpos_10, tpos_30)
+        else:
+            test_auc_sep, test_auc_tot = test_model(test_loader, model, tasks)
+            torch.save(model.state_dict(), '{}.pkl'.format(file_name))
+            torch.save(model, '{}.pt'.format(file_name))
+
+            print('AUC of the model on the test set for single task: {}\n'
+                  'AUC of the model on the test set for all tasks: {}'.format(test_auc_sep, test_auc_tot))
+            if write_file:
+                with open(file_name, 'a') as fp:
+                    fp.write('AUC of the model on the test set for single task: {}\n'
+                             'AUC of the model on the test set for all tasks: {}'.format(test_auc_sep, test_auc_tot))
+
+            # return (test_auc_tot)
+        sys.exit(0)
+
+    signal.signal(signal.SIGINT, signal_handler)
+
     for epoch in range(num_epochs):
         print("Epoch: [{}/{}]".format(epoch + 1, num_epochs))
         tot_loss = 0
@@ -418,8 +465,8 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
             elif calcpos:
                 print("Calculating train pos...")
                 tpos_0, tpos_5, tpos_10, tpos_30 = 0, 0, 0, 0
-                if epoch > 1 and 0 == (epoch % 10):
-                    tpos_0, tpos_5, tpos_10, tpos_30 = test_model(train_loader, model, tasks)
+                # if epoch > 1 and 0 == (epoch % 10):
+                #     tpos_0, tpos_5, tpos_10, tpos_30 = test_model(train_loader, model, tasks)
                 acc_history[:, 0, epoch] = [tpos_0, tpos_5, tpos_10, tpos_30]
                 print("Calculating validation pos...")
                 vpos_0, vpos_5, vpos_10, vpos_30 = test_model(validation_loader, model, tasks)
