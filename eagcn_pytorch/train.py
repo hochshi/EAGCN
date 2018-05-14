@@ -465,11 +465,13 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
             elif calcpos:
                 print("Calculating train pos...")
                 tpos_0, tpos_5, tpos_10, tpos_30 = 0, 0, 0, 0
-                # if epoch > 1 and 0 == (epoch % 10):
-                #     tpos_0, tpos_5, tpos_10, tpos_30 = test_model(train_loader, model, tasks)
+                if epoch > 1 and 0 == (epoch % 9):
+                    pos_data, train_fps, train_fp_labels = test_model(train_loader, model, tasks, reportFps=True)
+                    tpos_0, tpos_5, tpos_10, tpos_30 = pos_data
                 acc_history[:, 0, epoch] = [tpos_0, tpos_5, tpos_10, tpos_30]
                 print("Calculating validation pos...")
-                vpos_0, vpos_5, vpos_10, vpos_30 = test_model(validation_loader, model, tasks)
+                pos_data, val_fps, val_fp_labels = test_model(validation_loader, model, tasks, reportFps=True)
+                vpos_0, vpos_5, vpos_10, vpos_30 = pos_data
                 acc_history[:, 1, epoch] = [vpos_0, vpos_5, vpos_10, vpos_30]
                 print(
                     'Epoch: [{}/{}], '
@@ -539,7 +541,7 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
             'Test Precision: {}, Recall: {}, Specificity: {}, Accuracy: {}'.format(tpre, trec, tspe, tacc)
         )
     elif calcpos:
-        pos_data, fps, fp_labels = test_model(test_loader, model, tasks, reportFps=True)
+        pos_data, test_fps, test_fp_labels = test_model(test_loader, model, tasks, reportFps=True)
         tpos_0, tpos_5, tpos_10, tpos_30 = pos_data
         print(
             'Test: 1: {}, 5: {}, 10: {}, 30: {}'.format(
@@ -553,7 +555,11 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
                 fp.write('\n Test: 1: {}, 5: {}, 10: {}, 30: {}'.format(
                 tpos_0, tpos_5, tpos_10, tpos_30
             ))
-            np.savez('{}_outputs'.format(file_name), fps=fps, fp_labels=fp_labels)
+            np.savez('{}_outputs'.format(file_name),
+                     test_fps=test_fps, test_fp_labels=test_fp_labels,
+                     train_fps=train_fps, train_fp_labels=train_fp_labels,
+                     val_fps=val_fps, val_fp_labels=val_fp_labels
+                     )
             np.savez('{}_acc_history'.format(file_name), acc_history=acc_history)
         return (tpos_0, tpos_5, tpos_10, tpos_30)
     else:

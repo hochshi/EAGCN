@@ -106,8 +106,8 @@ class MolGraph(nn.Module):
         # Should I drop the dropout? It seems to cause issues
         # F.dropout is bad?
         # return F.dropout(F.relu(self.bn[('out', layer)](out)), p=self.dropout, training=self.training)
-        # return out
-        return out.div(nz.sum(dim=1).unsqueeze(1))
+        return out
+        # return out.div(nz.sum(dim=1).unsqueeze(1))
 
     def get_next_node(self, nz, node_data, layer):
         out = self.conv[('node', layer)](node_data)
@@ -132,9 +132,9 @@ class MolGraph(nn.Module):
         # nz, _ = adj_mat.max(dim=2)
         # nz = nz.view(-1)
         # ln = torch.mul(nz.view(adj_mat.shape[0:-1]).unsqueeze(1).expand(-1, self.node_attr_len, -1), ln)
-        avg = adj_mat.sum(dim=2).unsqueeze(1)
-        return (att.sum(dim=2).div(avg+1e-6), act.sum(dim=2).div(avg+1e-6))
-        # return (att.sum(dim=2), act.sum(dim=2))
+        # avg = adj_mat.sum(dim=2).unsqueeze(1)
+        # return (att.sum(dim=2).div(avg+1e-6), act.sum(dim=2).div(avg+1e-6))
+        return (att.sum(dim=2), act.sum(dim=2))
 
     def next_radius_adj_mat(self, adj_mat, adj_mats):
         next_adj_mat = torch.bmm(adj_mat, adj_mats[0])
