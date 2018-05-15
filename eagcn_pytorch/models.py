@@ -14,6 +14,57 @@ from sympy.ntheory import factorint
 # DoubleTensor = torch.cuda.DoubleTensor if use_cuda else torch.DoubleTensor
 
 
+class SimpleMolEmbed(nn.Module):
+    def __init__(self, fp_len, edge_to_ix, edge_word_len, node_to_ix, node_word_len, radius, nclass):
+
+        super(SimpleMolEmbed, self).__init__()
+
+        self.radius = radius
+        self.fp_len = fp_len
+        self.edge_to_ix = edge_to_ix
+        self.edge_word_len = edge_word_len
+        self.node_to_ix = node_to_ix
+        self.node_word_len = node_word_len
+        self.edge_embeddings = nn.Embedding(len(edge_to_ix), fp_len)
+        self.node_embeddings = nn.Embedding(len(node_to_ix), fp_len)
+        self.output = nn.Linear(fp_len, nclass)
+
+    def embed_edges(self, adjs, bfts):
+        nz = adjs.view(-1).byte()
+        new_edges = Variable(from_numpy(np.zeros(nz.shape + (self.fp_len,))).float())
+        new_edges[nz.unsqueeze(1).expand(-1, self.fp_len)] = self.edge_embeddings(bfts).view(-1)
+        return new_edges.view(adjs.shape + (-1,)).permute(0, 3, 1, 2).contiguous()
+
+    def embed_nodes(self, adjs, afms):
+        nz, _ = adjs.max(dim=2)
+        nz = nz.view(-1).byte()
+        new_nodes = Variable(from_numpy(np.zeros(nz.shape + (self.fp_len,))).float())
+        new_nodes[nz.unsqueeze(1).expand(-1, self.fp_len)] = self.node_embeddings(afms).view(-1)
+        return new_nodes.view(adjs.shape[0:-1] + (-1,)).permute(0, 2, 1).contiguous()
+
+    def get_next_node(self, adj_mat, node_data, edge_data):
+        lna = torch.mul(adj_mat.unsqueeze(1).expand(-1, self.fp_len, -1, -1), node_data.unsqueeze(3))
+        lnb = torch.mul(adj_mat.unsqueeze(1).expand((-1, self.fp_len, -1, -1)), edge_data)
+        return torch.mul(lna, lnb).sum(dim=3)
+
+    def forward(self, adjs, afms, axfm, bfts):
+        edge_data = self.embed_edges(adjs, bfts)
+        node_data = self.embed_nodes(adjs, afms)
+
+        adjs_no_diag = torch.clamp(adjs - Variable(from_numpy(np.eye(adjs.size()[1])).float()), min=0)
+
+        nz, _ = adjs.max(dim=2)
+
+        node_current = node_data
+        adj_mat = adjs_no_diag
+        node_next = node_current
+
+        for radius in range(self.radius):
+            node_next = self.get_next_node(adj_mat, node_next, edge_data)
+        fps = (node_current+node_next).sum(dim=-1)
+        return self.output(fps), fps
+
+
 class MolGraph(nn.Module):
     def __init__(self, n_afeat, fp_len, edge_to_ix, edge_word_len, node_to_ix, node_word_len, radius, edge_embedding_dim, node_embedding_dim, use_att):
         super(MolGraph, self).__init__()

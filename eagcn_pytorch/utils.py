@@ -622,7 +622,11 @@ def data_filter(x_all, y_all, target, sizes, tasks, size_cutoff=1000):
                 idx_col.append(i)
     y_task = [[each_list[i] for i in idx_col] for each_list in y_select]
 
-    return(x_select, y_task)
+    mols = [mol_dat[-1] for mol_dat in x_select]
+    unique_mols, indices = np.unique(mols, return_index=True)
+
+    return ([x_select[i] for i in indices], [y_task[i] for i in indices])
+    # return(x_select, y_task)
 
 def normalize(mx):
     """Row-normalize sparse matrix"""
