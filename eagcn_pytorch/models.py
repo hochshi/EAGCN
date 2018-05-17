@@ -27,7 +27,7 @@ class SimpleMolEmbed(nn.Module):
         self.node_word_len = node_word_len
         self.edge_embeddings = nn.Embedding(len(edge_to_ix), fp_len)
         self.node_embeddings = nn.Embedding(len(node_to_ix), fp_len)
-        self.output = nn.Linear(fp_len, nclass)
+        self.output = nn.Linear((radius+1)*fp_len, nclass)
 
     def embed_edges(self, adjs, bfts):
         nz = adjs.view(-1).byte()
@@ -53,15 +53,17 @@ class SimpleMolEmbed(nn.Module):
 
         adjs_no_diag = torch.clamp(adjs - Variable(from_numpy(np.eye(adjs.size()[1])).float()), min=0)
 
-        nz, _ = adjs.max(dim=2)
-
         node_current = node_data
         adj_mat = adjs_no_diag
         node_next = node_current
 
+        fps = list()
+        fps.append(node_next)
+
         for radius in range(self.radius):
             node_next = self.get_next_node(adj_mat, node_next, edge_data)
-        fps = (node_current+node_next).sum(dim=-1)
+            fps.append(node_next)
+        fps = torch.cat(fps, dim=1).sum(dim=-1)
         return self.output(fps), fps
 
 

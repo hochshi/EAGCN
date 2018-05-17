@@ -362,7 +362,7 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
     # else:
     #     model = MolGCN(n_afeat, edge_to_ix, edge_word_len, node_to_ix, node_word_len, len(tasks))
 
-    model = SimpleMolEmbed(50, edge_to_ix, edge_word_len, node_to_ix, node_word_len, 2, len(tasks))
+    model = SimpleMolEmbed(10, edge_to_ix, edge_word_len, node_to_ix, node_word_len, 2, len(tasks))
 
 
     print("model has {} parameters".format(count_parameters(model)))
