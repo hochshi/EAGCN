@@ -335,12 +335,12 @@ def cosine_sim(A, B, eps=1e-8):
 
 def test_sgn_model(model, train_loader, test_loader):
 
-    train_adj, train_afm, train_axfm, train_bft, train_labels = mol_to_input_label(train_loader.dataset.getall())
-    train_fps = model.w_embedding(train_adj, train_afm, train_axfm, train_bft)
-    del train_adj, train_afm, train_axfm, train_bft
-    test_adj, test_afm, test_axfm, test_bft, test_labels = mol_to_input_label(test_loader.dataset.getall())
-    test_fps = model.w_embedding(test_adj, test_afm, test_axfm, test_bft)
-    del test_adj, test_afm, test_axfm, test_bft
+    train_adj, train_afm, train_bft, train_labels = mol_to_input_label(train_loader.dataset.getall())
+    train_fps = model.w_embedding(train_adj, train_afm, train_bft)
+    del train_adj, train_afm, train_bft
+    test_adj, test_afm, test_bft, test_labels = mol_to_input_label(test_loader.dataset.getall())
+    test_fps = model.w_embedding(test_adj, test_afm, test_bft)
+    del test_adj, test_afm, test_bft
 
     dist_mat = cosine_sim(test_fps, train_fps)
     correct = []
