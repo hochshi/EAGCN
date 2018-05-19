@@ -32,15 +32,15 @@ class SkipGramMolEmbed(nn.Module):
         return new_nodes.view(adjs.shape[0:-1] + (-1,)).permute(0, 2, 1).contiguous()
 
     def get_next_node(self, adj_mat, node_data, edge_data):
-        lna = torch.mul(adj_mat.unsqueeze(1).expand(-1, self.fp_len, -1, -1), node_data.unsqueeze(3))
-        lnb = torch.mul(adj_mat.unsqueeze(1).expand((-1, self.fp_len, -1, -1)), edge_data)
+        lna = torch.mul(adj_mat.unsqueeze(1).expand(-1, self.fp_len, -1, -1).float(), node_data.unsqueeze(3))
+        lnb = torch.mul(adj_mat.unsqueeze(1).expand((-1, self.fp_len, -1, -1)).float(), edge_data)
         return torch.mul(lna, lnb).sum(dim=3)
 
-    def forward(self, adjs, afms, axfm, bfts):
+    def forward(self, adjs, afms, bfts):
         edge_data = self.embed_edges(adjs, bfts)
         node_data = self.embed_nodes(adjs, afms)
 
-        adjs_no_diag = torch.clamp(adjs - Variable(from_numpy(np.eye(adjs.size()[1])).float()), min=0)
+        adjs_no_diag = torch.clamp(adjs - Variable(from_numpy(np.eye(adjs.size()[1])).long()), min=0)
 
         node_current = node_data
         adj_mat = adjs_no_diag

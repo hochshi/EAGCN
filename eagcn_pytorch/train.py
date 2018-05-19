@@ -32,7 +32,7 @@ EAGCN_structure = 'concate'  # 'concate', 'weighted_ave'
 write_file = True
 n_den1, n_den2 = 64, 32
 
-adj_pos, afm_pos, btf_pos, orderAtt_pos, aromAtt_pos, conjAtt_pos, ringAtt_pos, labels_pos = range(8)
+adj_pos, afm_pos, btf_pos, labels_pos = range(4)
 
 if dataset == 'tox21':
     n_sgc1_1, n_sgc1_2, n_sgc1_3, n_sgc1_4, n_sgc1_5 = 10, 10, 10, 10, 10
@@ -87,7 +87,7 @@ if dataset == 'pubchem_chembl' or dataset == 'small_batch_test':
     n_sgc1_1, n_sgc1_2, n_sgc1_3, n_sgc1_4, n_sgc1_5 = 20, 20, 20, 20, 20
     n_sgc2_1, n_sgc2_2, n_sgc2_3, n_sgc2_4, n_sgc2_5 = 60, 20, 20, 20, 20
     # batch_size = 16384
-    batch_size = 2
+    batch_size = 64
     weight_decay = 0.0001  # L-2 Norm
     dropout = 0.3
     random_state = 11
@@ -358,15 +358,27 @@ def test_sgn_model(model, train_loader, test_loader):
 
 
 def mol_to_input(mol):
-    afm, axfm = embed_nodes(mol[adj_pos], mol[afm_pos])
-    btf = embed_edges(mol[adj_pos], mol[btf_pos])
-    return (Variable(mol[adj_pos]).squeeze(dim=0), Variable(afm).squeeze(dim=0), Variable(axfm).squeeze(dim=0), Variable(btf).squeeze(dim=0))
+    return (
+        Variable(mol[adj_pos]),
+        Variable(mol[afm_pos]),
+        Variable(mol[btf_pos])
+    )
 
 
 def mol_to_input_label(mol):
-    afm, axfm = embed_nodes(mol[adj_pos], mol[afm_pos])
-    btf = embed_edges(mol[adj_pos], mol[btf_pos])
-    return (Variable(mol[adj_pos]).squeeze(dim=0), Variable(afm).squeeze(dim=0), Variable(axfm).squeeze(dim=0), Variable(btf).squeeze(dim=0), Variable(mol[labels_pos]))
+    return (
+        Variable(mol[adj_pos]),
+        Variable(mol[afm_pos]),
+        Variable(mol[btf_pos]),
+        Variable(mol[labels_pos])
+    )
+
+def simplify_input(x_all):
+    return [[
+        x[1].astype(np.uint8),
+        x[0][:,0].astype(np.uint8),
+        x[2][x[1].astype(np.bool)].astype(np.uint8)
+    ] for x in x_all]
 
 
 def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
@@ -428,6 +440,7 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
     validation_acc_history = []
     acc_history = np.empty([4, 2, num_epochs])
     stop_training = False
+    x_all = simplify_input(x_all)
     train_loader, validation_loader, test_loader, BCE_weight, len_train = split_data(x_all, y_all, target,
                                                                                      mol_to_graph_transform,
                                                                                      random_state=random_state,

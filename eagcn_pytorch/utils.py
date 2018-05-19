@@ -718,19 +718,19 @@ class MolDatum():
         - self.label: 0 neg, 1 pos -1 missing for different target.
     """
     def __init__(self, x, label, target, index):
-        self.adj = x[1]
-        self.afm = x[0]
+        self.adj = x[0]
+        self.afm = x[1]
         self.bft = x[2]
-        self.orderAtt = x[3]
-        self.aromAtt = x[4]
-        self.conjAtt = x[5]
-        self.ringAtt = x[6]
+        # self.orderAtt = x[3]
+        # self.aromAtt = x[4]
+        # self.conjAtt = x[5]
+        # self.ringAtt = x[6]
         self.label = label
         self.target = target
         self.index = index
 
     def to_collate(self):
-        return [self.adj, self.afm, self.bft, self.orderAtt, self.aromAtt, self.conjAtt, self.ringAtt, self.label]
+        return [self.adj, self.afm, self.bft, self.label]
 
 def construct_dataset(x_all, y_all, target):
     output = []
@@ -840,48 +840,56 @@ def mol_collate_func_class(batch):
     orderAtt_list, aromAtt_list, conjAtt_list, ringAtt_list = [], [], [], []
 
     for datum in batch:
-        label_list.append(datum[7])
+        afm_list.append(datum[1])
+        bft_list.append(datum[2])
+        label_list.append(datum[3])
         size_list.append(datum[0].shape[0])
     max_size = np.max(size_list) # max of batch    222 for hiv, 132 for tox21,
-    btf_len = 1 #datum[2].shape[0]
-    atf_len = datum[1].shape[1]
+    # btf_len = 1 #datum[2].shape[0]
+    # atf_len = datum[1].shape[1]
     #max_size = max_molsize #max_molsize 132
     # padding
     for datum in batch:
         filled_adj = np.zeros((max_size, max_size), dtype=np.float32)
         filled_adj[0:datum[0].shape[0], 0:datum[0].shape[0]] = datum[0]
-        filled_afm = np.zeros((max_size, 25), dtype=np.float32)
-        # Originally the number of atom features is set at 25
-        filled_afm = np.zeros((max_size, atf_len), dtype=np.float32)
-        filled_afm[0:datum[0].shape[0], :] = datum[1]
-        filled_bft = np.zeros((btf_len, max_size, max_size), dtype=np.int32)
-        filled_bft[:, 0:datum[0].shape[0], 0:datum[0].shape[0]] = datum[2]
-
-        filled_orderAtt = np.zeros((5, max_size, max_size), dtype=np.float32)
-        filled_orderAtt[:, 0:datum[0].shape[0], 0:datum[0].shape[0]] = datum[3]
-
-        filled_aromAtt = np.zeros((3, max_size, max_size), dtype=np.float32)
-        filled_aromAtt[:, 0:datum[0].shape[0], 0:datum[0].shape[0]] = datum[4]
-
-        filled_conjAtt = np.zeros((3, max_size, max_size), dtype=np.float32)
-        filled_conjAtt[:, 0:datum[0].shape[0], 0:datum[0].shape[0]] = datum[5]
-
-        filled_ringAtt = np.zeros((3, max_size, max_size), dtype=np.float32)
-        filled_ringAtt[:, 0:datum[0].shape[0], 0:datum[0].shape[0]] = datum[6]
+        # filled_afm = np.zeros((max_size, 25), dtype=np.float32)
+        # # Originally the number of atom features is set at 25
+        # filled_afm = np.zeros((max_size, atf_len), dtype=np.float32)
+        # filled_afm[0:datum[0].shape[0], :] = datum[1]
+        # filled_bft = np.zeros((btf_len, max_size, max_size), dtype=np.int32)
+        # filled_bft[:, 0:datum[0].shape[0], 0:datum[0].shape[0]] = datum[2]
+        #
+        # filled_orderAtt = np.zeros((5, max_size, max_size), dtype=np.float32)
+        # filled_orderAtt[:, 0:datum[0].shape[0], 0:datum[0].shape[0]] = datum[3]
+        #
+        # filled_aromAtt = np.zeros((3, max_size, max_size), dtype=np.float32)
+        # filled_aromAtt[:, 0:datum[0].shape[0], 0:datum[0].shape[0]] = datum[4]
+        #
+        # filled_conjAtt = np.zeros((3, max_size, max_size), dtype=np.float32)
+        # filled_conjAtt[:, 0:datum[0].shape[0], 0:datum[0].shape[0]] = datum[5]
+        #
+        # filled_ringAtt = np.zeros((3, max_size, max_size), dtype=np.float32)
+        # filled_ringAtt[:, 0:datum[0].shape[0], 0:datum[0].shape[0]] = datum[6]
 
         adj_list.append(filled_adj)
-        afm_list.append(filled_afm)
-        bft_list.append(filled_bft)
-        orderAtt_list.append(filled_orderAtt)
-        aromAtt_list.append(filled_aromAtt)
-        conjAtt_list.append(filled_conjAtt)
-        ringAtt_list.append(filled_ringAtt)
+        # afm_list.append(filled_afm)
+        # bft_list.append(filled_bft)
+        # orderAtt_list.append(filled_orderAtt)
+        # aromAtt_list.append(filled_aromAtt)
+        # conjAtt_list.append(filled_conjAtt)
+        # ringAtt_list.append(filled_ringAtt)
 
-    return ([from_numpy(np.array(adj_list)), from_numpy(np.array(afm_list)),
-             from_numpy(np.array(bft_list)), from_numpy(np.array(orderAtt_list)),
-             from_numpy(np.array(aromAtt_list)), from_numpy(np.array(conjAtt_list)),
-             from_numpy(np.array(ringAtt_list)),
-             from_numpy(np.array(label_list))])
+    return ([
+        from_numpy(np.array(adj_list)).long(),
+        from_numpy(np.concatenate(afm_list)).long(),
+        from_numpy(np.concatenate(bft_list)).long(),
+        from_numpy(np.array(label_list)).long()
+    ])
+    # return ([from_numpy(np.array(adj_list)), from_numpy(np.array(afm_list)),
+    #          from_numpy(np.array(bft_list)), from_numpy(np.array(orderAtt_list)),
+    #          from_numpy(np.array(aromAtt_list)), from_numpy(np.array(conjAtt_list)),
+    #          from_numpy(np.array(ringAtt_list)),
+    #          from_numpy(np.array(label_list))])
 
     # if use_cuda:
     #     return ([torch.from_numpy(np.array(adj_list)).cuda(), torch.from_numpy(np.array(afm_list)).cuda(),
