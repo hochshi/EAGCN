@@ -15,7 +15,9 @@ import openbabel
 import pybel
 import operator
 from torch.autograd import Variable
+from torch import nn
 import torch.nn.functional as F
+from collections import defaultdict
 
 use_cuda = torch.cuda.is_available()
 
@@ -727,11 +729,17 @@ class MolDatum():
         self.target = target
         self.index = index
 
+    def to_collate(self):
+        return [self.adj, self.afm, self.bft, self.orderAtt, self.aromAtt, self.conjAtt, self.ringAtt, self.label]
+
 def construct_dataset(x_all, y_all, target):
     output = []
+    label_dict = defaultdict(list)
     for i in range(len(x_all)):
-        output.append(MolDatum(x_all[i], y_all[i], target, i))
-    return(output)
+        mol_dat = MolDatum(x_all[i], y_all[i], target, i)
+        output.append(mol_dat)
+        label_dict[np.argmax(y_all[i])].append(mol_dat)
+    return(output, label_dict)
 
 class MolDataset(Dataset):
     """
@@ -1135,7 +1143,7 @@ def data_padding(x, max_size):
     return(x_padded)
 
 def construct_loader(x, y, target, batch_size, shuffle=True):
-    data_set = construct_dataset(x, y, target)
+    data_set, _ = construct_dataset(x, y, target)
     data_set = MolDataset(data_set)
     loader = torch.utils.data.DataLoader(dataset=data_set,
                                                batch_size=batch_size,

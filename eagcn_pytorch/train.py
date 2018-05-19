@@ -22,11 +22,16 @@ import os
 import matplotlib.pyplot as plt
 from time import gmtime, strftime
 
+from SkipGramModel import *
+from scipy.spatial.distance import cdist
+
 # Training settings
 dataset = 'small_batch_test'  # 'tox21', 'hiv', 'pubchem_chembl', 'small_batch_test'
 EAGCN_structure = 'concate'  # 'concate', 'weighted_ave'
 write_file = True
 n_den1, n_den2 = 64, 32
+
+adj_pos, afm_pos, btf_pos, orderAtt_pos, aromAtt_pos, conjAtt_pos, ringAtt_pos, labels_pos = range(8)
 
 if dataset == 'tox21':
     n_sgc1_1, n_sgc1_2, n_sgc1_3, n_sgc1_4, n_sgc1_5 = 10, 10, 10, 10, 10
@@ -186,14 +191,15 @@ def embed_nodes(adjs, afms):
     )
 
 
-def split_data(x_all, y_all, target, mol_to_graph_transform, random_state=random_state):
+def split_data(x_all, y_all, target, mol_to_graph_transform, random_state=random_state, loader_func=construct_loader):
     try:
         X, x_test, y, y_test = train_test_split(x_all, y_all, test_size=0.1, random_state=random_state, stratify=y_all)
     except:
         X, x_test, y, y_test = train_test_split(x_all, y_all, test_size=0.1, random_state=random_state)
 
     if mol_to_graph_transform is None:
-        test_loader = construct_loader(x_test, y_test, target, batch_size)
+        test_loader = loader_func(x_test, y_test, target, batch_size)
+        # test_loader = construct_sgm_loader(x_test, y_test, target, batch_size)
     else:
         test_loader = construct_pubchem_loader(x_test, y_test, batch_size, mol_to_graph_transform)
     del x_test, y_test
@@ -204,8 +210,8 @@ def split_data(x_all, y_all, target, mol_to_graph_transform, random_state=random
         x_train, x_val, y_train, y_val = train_test_split(X, y, test_size=0.1, random_state=random_state)
     del X, y
     if mol_to_graph_transform is None:
-        train_loader = construct_loader(x_train, y_train, target, batch_size)
-        validation_loader = construct_loader(x_val, y_val, target, batch_size)
+        train_loader = loader_func(x_train, y_train, target, batch_size)
+        validation_loader = loader_func(x_val, y_val, target, batch_size)
     else:
         train_loader = construct_pubchem_loader(x_train, y_train, batch_size, mol_to_graph_transform)
         validation_loader = construct_pubchem_loader(x_val, y_val, batch_size, mol_to_graph_transform)
@@ -319,6 +325,49 @@ def test_model(loader, model, tasks, reportFps=False):
         return (aucs, sum(aucs) / len(aucs))
 
 
+def cosine_sim(A, B, eps=1e-8):
+    dist_mat = torch.matmul(A, B.t())
+    w1 = torch.norm(A, 2, 1).unsqueeze(1).expand(-1, B.shape[0])
+    w2 = torch.norm(B, 2, 1).unsqueeze(0).expand(A.shape[0], -1)
+    return dist_mat / (w1 * w2).clamp(min=eps)
+
+
+def test_sgn_model(model, train_loader, test_loader):
+
+    train_adj, train_afm, train_axfm, train_bft, train_labels = mol_to_input_label(train_loader.dataset.getall())
+    train_fps = model.w_embedding(train_adj, train_afm, train_axfm, train_bft)
+    del train_adj, train_afm, train_axfm, train_bft
+    test_adj, test_afm, test_axfm, test_bft, test_labels = mol_to_input_label(test_loader.dataset.getall())
+    test_fps = model.w_embedding(test_adj, test_afm, test_axfm, test_bft)
+    del test_adj, test_afm, test_axfm, test_bft
+
+    dist_mat = cosine_sim(test_fps, train_fps)
+    correct = []
+    total = test_fps.shape[0]
+    top_ks = [1, 5, 10, 30]
+    # for i in range(test_fps.shape[0]):
+    #     dist_mat = cdist(test_fps[i,:], train_fps, metric='cosine')
+    top_sim = torch.topk(dist_mat, top_ks[-1]+1, dim=1, largest=True)[0]
+
+    for j, topk in enumerate(top_ks):
+        nearestn = dist_mat > top_sim[:, topk].unsqueeze(1)
+        nn_labels = torch.matmul(nearestn.double(), train_labels)
+        correct.append((torch.mul(nn_labels, test_labels) > 0).sum().data[0])
+    return np.true_divide(correct, total).tolist()
+
+
+def mol_to_input(mol):
+    afm, axfm = embed_nodes(mol[adj_pos], mol[afm_pos])
+    btf = embed_edges(mol[adj_pos], mol[btf_pos])
+    return (Variable(mol[adj_pos]).squeeze(dim=0), Variable(afm).squeeze(dim=0), Variable(axfm).squeeze(dim=0), Variable(btf).squeeze(dim=0))
+
+
+def mol_to_input_label(mol):
+    afm, axfm = embed_nodes(mol[adj_pos], mol[afm_pos])
+    btf = embed_edges(mol[adj_pos], mol[btf_pos])
+    return (Variable(mol[adj_pos]).squeeze(dim=0), Variable(afm).squeeze(dim=0), Variable(axfm).squeeze(dim=0), Variable(btf).squeeze(dim=0), Variable(mol[labels_pos]))
+
+
 def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
     x_all, y_all, target, sizes, mol_to_graph_transform, parameter_holder, edge_vocab, node_vocab = load_data(dataset)
     max_size = max(sizes)
@@ -362,8 +411,9 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
     # else:
     #     model = MolGCN(n_afeat, edge_to_ix, edge_word_len, node_to_ix, node_word_len, len(tasks))
 
-    model = SimpleMolEmbed(10, edge_to_ix, edge_word_len, node_to_ix, node_word_len, 2, len(tasks))
+    # model = SimpleMolEmbed(10, edge_to_ix, edge_word_len, node_to_ix, node_word_len, 2, len(tasks))
 
+    model = SkipGramModel(10, edge_to_ix, edge_word_len, node_to_ix, node_word_len, 2)
 
     print("model has {} parameters".format(count_parameters(model)))
     if use_cuda:
@@ -371,81 +421,89 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
         model.cuda()
 
     model.apply(weights_init)
-    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
+    # optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
+    optimizer = torch.optim.SparseAdam(model.parameters(), lr=learning_rate)
 
     validation_acc_history = []
     acc_history = np.empty([4, 2, num_epochs])
     stop_training = False
     train_loader, validation_loader, test_loader, BCE_weight, len_train = split_data(x_all, y_all, target,
                                                                                      mol_to_graph_transform,
-                                                                                     random_state=random_state)
+                                                                                     random_state=random_state,
+                                                                                     loader_func=construct_sgm_loader)
     del x_all, y_all, target
 
-    import signal
-    import sys
-    def signal_handler(signal, frame):
-        print('You pressed Ctrl+C!')
-        if precision_recall:
-            print("Calculating train precision and recall...")
-            tpre, trec, tspe, tacc = test_model(test_loader, model, tasks)
-            print(
-                'Test Precision: {}, Recall: {}, Specificity: {}, Accuracy: {}'.format(tpre, trec, tspe, tacc)
-            )
-        elif calcpos:
-            print("Calculating Top-K position...")
-            pos_data, fps, fp_labels = test_model(test_loader, model, tasks, reportFps=True)
-            tpos_0, tpos_5, tpos_10, tpos_30 = pos_data
-            print(
-                'Test: 1: {}, 5: {}, 10: {}, 30: {}'.format(
-                    tpos_0, tpos_5, tpos_10, tpos_30
-                ))
-            torch.save(model.state_dict(), '{}.pkl'.format(file_name))
-            torch.save(model, '{}.pt'.format(file_name))
-
-            if write_file:
-                with open(file_name, 'a') as fp:
-                    fp.write('\n Test: 1: {}, 5: {}, 10: {}, 30: {}'.format(
-                        tpos_0, tpos_5, tpos_10, tpos_30
-                    ))
-                np.savez('{}_outputs'.format(file_name), fps=fps, fp_labels=fp_labels)
-                np.savez('{}_acc_history'.format(file_name), acc_history=acc_history)
-            # return (tpos_0, tpos_5, tpos_10, tpos_30)
-        else:
-            test_auc_sep, test_auc_tot = test_model(test_loader, model, tasks)
-            torch.save(model.state_dict(), '{}.pkl'.format(file_name))
-            torch.save(model, '{}.pt'.format(file_name))
-
-            print('AUC of the model on the test set for single task: {}\n'
-                  'AUC of the model on the test set for all tasks: {}'.format(test_auc_sep, test_auc_tot))
-            if write_file:
-                with open(file_name, 'a') as fp:
-                    fp.write('AUC of the model on the test set for single task: {}\n'
-                             'AUC of the model on the test set for all tasks: {}'.format(test_auc_sep, test_auc_tot))
-
-            # return (test_auc_tot)
-        sys.exit(0)
-
-    signal.signal(signal.SIGINT, signal_handler)
+    # import signal
+    # import sys
+    # def signal_handler(signal, frame):
+    #     print('You pressed Ctrl+C!')
+    #     if precision_recall:
+    #         print("Calculating train precision and recall...")
+    #         tpre, trec, tspe, tacc = test_model(test_loader, model, tasks)
+    #         print(
+    #             'Test Precision: {}, Recall: {}, Specificity: {}, Accuracy: {}'.format(tpre, trec, tspe, tacc)
+    #         )
+    #     elif calcpos:
+    #         print("Calculating Top-K position...")
+    #         pos_data, fps, fp_labels = test_model(test_loader, model, tasks, reportFps=True)
+    #         tpos_0, tpos_5, tpos_10, tpos_30 = pos_data
+    #         print(
+    #             'Test: 1: {}, 5: {}, 10: {}, 30: {}'.format(
+    #                 tpos_0, tpos_5, tpos_10, tpos_30
+    #             ))
+    #         torch.save(model.state_dict(), '{}.pkl'.format(file_name))
+    #         torch.save(model, '{}.pt'.format(file_name))
+    #
+    #         if write_file:
+    #             with open(file_name, 'a') as fp:
+    #                 fp.write('\n Test: 1: {}, 5: {}, 10: {}, 30: {}'.format(
+    #                     tpos_0, tpos_5, tpos_10, tpos_30
+    #                 ))
+    #             np.savez('{}_outputs'.format(file_name), fps=fps, fp_labels=fp_labels)
+    #             np.savez('{}_acc_history'.format(file_name), acc_history=acc_history)
+    #         # return (tpos_0, tpos_5, tpos_10, tpos_30)
+    #     else:
+    #         test_auc_sep, test_auc_tot = test_model(test_loader, model, tasks)
+    #         torch.save(model.state_dict(), '{}.pkl'.format(file_name))
+    #         torch.save(model, '{}.pt'.format(file_name))
+    #
+    #         print('AUC of the model on the test set for single task: {}\n'
+    #               'AUC of the model on the test set for all tasks: {}'.format(test_auc_sep, test_auc_tot))
+    #         if write_file:
+    #             with open(file_name, 'a') as fp:
+    #                 fp.write('AUC of the model on the test set for single task: {}\n'
+    #                          'AUC of the model on the test set for all tasks: {}'.format(test_auc_sep, test_auc_tot))
+    #
+    #         # return (test_auc_tot)
+    #     sys.exit(0)
+    #
+    # signal.signal(signal.SIGINT, signal_handler)
 
     for epoch in range(num_epochs):
         print("Epoch: [{}/{}]".format(epoch + 1, num_epochs))
         tot_loss = 0
-        for i, (adj, afm, btf, orderAtt, aromAtt, conjAtt, ringAtt, labels) in enumerate(train_loader):
+        # for i, (adj, afm, btf, orderAtt, aromAtt, conjAtt, ringAtt, labels) in enumerate(train_loader):
+        for i, (mol_word, pos_context, neg_context, sizes, padding) in enumerate(train_loader):
             optimizer.zero_grad()
             model.zero_grad()
-            afm, axfm = embed_nodes(adj, afm)
-            btf = embed_edges(adj, btf)
-            outputs, _ = model(Variable(adj), Variable(afm), Variable(axfm), Variable(btf))
-            labels = Variable(labels.float())
-            non_nan_num = ((labels == 1).sum() + (labels == 0).sum()).float()
-            weights = weight_func(BCE_weight, labels)
-            loss = loss_func(output_transform(outputs),labels, weights)
+            # afm, axfm = embed_nodes(adj, afm)
+            # btf = embed_edges(adj, btf)
+            # outputs, _ = model(Variable(adj), Variable(afm), Variable(axfm), Variable(btf))
+            # outputs, _ = model(mol_to_input(mol_word), mol_to_input(pos_context), mol_to_input(neg_context))
+            # labels = Variable(labels.float())
+            # non_nan_num = ((labels == 1).sum() + (labels == 0).sum()).float()
+            # weights = weight_func(BCE_weight, labels)
+            # loss = loss_func(output_transform(outputs),labels, weights)
+            loss = model(mol_to_input(mol_word), mol_to_input(pos_context), mol_to_input(neg_context), sizes, padding)
             tot_loss += loss.data[0]
             loss.backward()
             optimizer.step()
 
         # report performance
-        if True:
+        if (0 == (epoch-9) % 10 ):
+            print(test_sgn_model(model, train_loader, validation_loader))
+"""
+        if False:
             if precision_recall:
                 print("Calculating train precision and recall...")
                 tpre, trec, tspe, tacc = test_model(train_loader, model, tasks)
@@ -577,7 +635,7 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
                          'AUC of the model on the test set for all tasks: {}'.format(test_auc_sep, test_auc_tot))
 
         return (test_auc_tot)
-
+"""
 
 tasks = all_tasks  # [task]
 print(' learning_rate: {},\n batch_size: {}, \n '
