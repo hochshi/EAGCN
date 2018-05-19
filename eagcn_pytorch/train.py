@@ -24,6 +24,7 @@ from time import gmtime, strftime
 
 from SkipGramModel import *
 from scipy.spatial.distance import cdist
+from tqdm import tqdm
 
 # Training settings
 dataset = 'small_batch_test'  # 'tox21', 'hiv', 'pubchem_chembl', 'small_batch_test'
@@ -86,7 +87,7 @@ if dataset == 'pubchem_chembl' or dataset == 'small_batch_test':
     n_sgc1_1, n_sgc1_2, n_sgc1_3, n_sgc1_4, n_sgc1_5 = 20, 20, 20, 20, 20
     n_sgc2_1, n_sgc2_2, n_sgc2_3, n_sgc2_4, n_sgc2_5 = 60, 20, 20, 20, 20
     # batch_size = 16384
-    batch_size = 64
+    batch_size = 2
     weight_decay = 0.0001  # L-2 Norm
     dropout = 0.3
     random_state = 11
@@ -483,7 +484,8 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
         print("Epoch: [{}/{}]".format(epoch + 1, num_epochs))
         tot_loss = 0
         # for i, (adj, afm, btf, orderAtt, aromAtt, conjAtt, ringAtt, labels) in enumerate(train_loader):
-        for i, (mol_word, pos_context, neg_context, sizes, padding) in enumerate(train_loader):
+        process_bar = tqdm(enumerate(train_loader))
+        for i, (mol_word, pos_context, neg_context, sizes, padding) in process_bar:
             optimizer.zero_grad()
             model.zero_grad()
             # afm, axfm = embed_nodes(adj, afm)
@@ -500,7 +502,7 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
             optimizer.step()
 
         # report performance
-        if (0 == (epoch-9) % 10 ):
+        if (0 == (epoch-9) % 2 ):
             print(test_sgn_model(model, train_loader, validation_loader))
 """
         if False:
