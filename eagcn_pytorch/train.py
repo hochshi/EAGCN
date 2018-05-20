@@ -87,7 +87,7 @@ if dataset == 'pubchem_chembl' or dataset == 'small_batch_test':
     n_sgc1_1, n_sgc1_2, n_sgc1_3, n_sgc1_4, n_sgc1_5 = 20, 20, 20, 20, 20
     n_sgc2_1, n_sgc2_2, n_sgc2_3, n_sgc2_4, n_sgc2_5 = 60, 20, 20, 20, 20
     # batch_size = 16384
-    batch_size = 2
+    batch_size = 1
     weight_decay = 0.0001  # L-2 Norm
     dropout = 0.3
     random_state = 11
@@ -501,7 +501,7 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
         tot_loss = 0
         # for i, (adj, afm, btf, orderAtt, aromAtt, conjAtt, ringAtt, labels) in enumerate(train_loader):
         process_bar = tqdm(enumerate(train_loader))
-        for i, (mol_word, pos_context, neg_context, sizes, padding) in process_bar:
+        for i, (pos_context, neg_context, sizes, padding) in process_bar:
             optimizer.zero_grad()
             model.zero_grad()
             # afm, axfm = embed_nodes(adj, afm)
@@ -512,7 +512,7 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
             # non_nan_num = ((labels == 1).sum() + (labels == 0).sum()).float()
             # weights = weight_func(BCE_weight, labels)
             # loss = loss_func(output_transform(outputs),labels, weights)
-            loss = model(mol_to_input(mol_word), mol_to_input(pos_context), mol_to_input(neg_context), sizes, padding)
+            loss = model(mol_to_input(pos_context), mol_to_input(neg_context), sizes, padding)
             tot_loss += loss.data[0]
             loss.backward()
             optimizer.step()

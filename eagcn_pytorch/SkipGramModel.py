@@ -70,21 +70,29 @@ class SkipGramModel(nn.Module):
         self.c_embedding.edge_embeddings.weight.data.uniform_(-0, 0)
         self.c_embedding.node_embeddings.weight.data.uniform_(-0, 0)
 
-    def forward(self, mol, pos_context, neg_context, sizes, padding):
-        mol_fps = self.w_embedding(*mol)
-        pos_fps = self.c_embedding(*pos_context)
+    def forward(self, pos_context, neg_context, sizes, padding):
+
+        word_fps = self.w_embedding(*pos_context)
+        context_fps = self.c_embedding(*pos_context)
         neg_fps = self.c_embedding(*neg_context)
-        mask = np.ones((len(sizes), sizes.max()))
-        for i, size in enumerate(sizes):
-            mask[i, size:] = 0
-        mask = Variable(from_numpy(mask))
-        # iscore = F.logsigmoid(torch.matmul(pos_fps, mol_fps.t()))
-        iscore = F.logsigmoid(torch.bmm(pos_fps.view(mask.shape + (-1,)), mol_fps.unsqueeze(1).permute(0, 2, 1)).squeeze())
-        # oscore = F.logsigmoid(torch.matmul(neg_fps.neg(), mol_fps.t()))
-        oscore = F.logsigmoid(torch.bmm(neg_fps.view(mask.shape + (-1,)), mol_fps.unsqueeze(1).permute(0, 2, 1)).squeeze())
-        iscore = torch.div(torch.mul(iscore, mask.float()).sum(dim=1), Variable(from_numpy(sizes)).float())
-        oscore = torch.div(torch.mul(oscore, mask.float()).sum(dim=1), Variable(from_numpy(sizes)).float())
-        return -1 * (sum(iscore)+sum(oscore))
+
+        iscore = F.logsigmoid(context_fps.matmul(word_fps.t()))
+        iscore = (iscore - torch.diag(iscore.diag())).sum()
+
+        oscore = F.logsigmoid(neg_fps.neg().matmul(word_fps.t())).sum()
+
+        # mask = np.ones((len(sizes), sizes.max()))
+        # for i, size in enumerate(sizes):
+        #     mask[i, size:] = 0
+        # mask = Variable(from_numpy(mask))
+        #
+        # # iscore = F.logsigmoid(torch.matmul(pos_fps, mol_fps.t()))
+        # iscore = F.logsigmoid(torch.bmm(pos_fps.view(mask.shape + (-1,)), mol_fps.unsqueeze(1).permute(0, 2, 1)).squeeze())
+        # # oscore = F.logsigmoid(torch.matmul(neg_fps.neg(), mol_fps.t()))
+        # oscore = F.logsigmoid(torch.bmm(neg_fps.view(mask.shape + (-1,)), mol_fps.unsqueeze(1).permute(0, 2, 1)).squeeze())
+        # iscore = torch.div(torch.mul(iscore, mask.float()).sum(dim=1), Variable(from_numpy(sizes)).float())
+        # oscore = torch.div(torch.mul(oscore, mask.float()).sum(dim=1), Variable(from_numpy(sizes)).float())
+        return -1 * (iscore + oscore)
 
 
 class SkipGramModelDataset(Dataset):
@@ -95,47 +103,27 @@ class SkipGramModelDataset(Dataset):
         self.label_data_dict = label_data_dict
 
     def __len__(self):
-        return len(self.data_list)
+        return len(self.label_data_dict)
 
     def __getitem__(self, item):
-        label = self.data_list[item].label
+        label = item
         context = []
-        for mol in self.label_data_dict[np.argmax(label)]:
-            if self.data_list[item].index != mol.index:
-                context.append(mol.to_collate())
+        for mol in self.label_data_dict[label]:
+            context.append(mol.to_collate())
         return OrderedDict([
-            ('word', [self.data_list[item].to_collate()]),
             ('context', context),
-            ('neg', [mol.to_collate() for mol in np.random.choice(self.data_list, size=len(context))]),
+            ('neg', [mol.to_collate() for mol in np.random.choice(self.data_list, size=len(context)-1)]),
             ('context_size', [len(context)])
         ])
-        # (
-        #     [self.data_list[item].to_collate()],
-        #     context,
-        #     [mol.to_collate() for mol in np.random.choice(self.data_list, size=len(context))],
-        #     [len(context)]
-        # )
 
     def getall(self):
         return mol_collate_func_class([mol.to_collate() for mol in self.data_list])
 
     @staticmethod
     def collate(batch):
-        words = []
-        context = []
-        neg = []
-        sizes = []
-        for datum in batch:
-            sizes += datum['context_size']
-        padding = np.max(sizes) - np.array(sizes)
-        for datum, pad in zip(batch, padding):
-            words += datum['word']
-            context += datum['context'] + datum['word'] * pad
-            neg += datum['neg'] + datum['word'] * pad
         return (
-            mol_collate_func_class(words),
-            mol_collate_func_class(context),
-            mol_collate_func_class(neg),
-            np.array(sizes),
-            padding
+            mol_collate_func_class(batch[0]['context']),
+            mol_collate_func_class(batch[0]['neg']),
+            np.array(batch[0]['context_size']),
+            np.array([0])
         )
