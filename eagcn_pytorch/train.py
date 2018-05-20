@@ -334,27 +334,89 @@ def cosine_sim(A, B, eps=1e-8):
 
 
 def test_sgn_model(model, train_loader, test_loader):
-
-    train_adj, train_afm, train_bft, train_labels = mol_to_input_label(train_loader.dataset.getall())
-    train_fps = model.w_embedding(train_adj, train_afm, train_bft)
-    del train_adj, train_afm, train_bft
-    test_adj, test_afm, test_bft, test_labels = mol_to_input_label(test_loader.dataset.getall())
-    test_fps = model.w_embedding(test_adj, test_afm, test_bft)
-    del test_adj, test_afm, test_bft
-
-    dist_mat = cosine_sim(test_fps, train_fps)
-    correct = []
-    total = test_fps.shape[0]
+    process_bar = tqdm(test_loader)
+    total = 0
     top_ks = [1, 5, 10, 30]
+    correct = [0] * len(top_ks)
+
+    for test_mols in process_bar:
+        test_adj, test_afm, test_bft, test_labels = mol_to_input_label(test_mols[0])
+        total += test_adj.shape[0]
+        test_fps = model.w_embedding(test_adj, test_afm, test_bft)
+
+        dist_mats = []
+        labels = []
+        for train_mols in train_loader:
+            train_adj, train_afm, train_bft, train_labels = mol_to_input_label(train_mols[0])
+            train_fps = model.w_embedding(train_adj, train_afm, train_bft)
+            dist_mats.append(cosine_sim(test_fps, train_fps))
+            labels.append(train_labels)
+
+        dist_mats = torch.cat(dist_mats, dim=1)
+        train_labels = torch.cat(labels, dim=0)
+        top_sim = torch.topk(dist_mats, top_ks[-1] + 1, dim=1, largest=True)[0]
+        for j, topk in enumerate(top_ks):
+            nearestn = dist_mats > top_sim[:, topk].unsqueeze(1)
+            nn_labels = torch.matmul(nearestn, train_labels)
+            correct[j] += (torch.mul(nn_labels, test_labels) > 0).sum().data[0]
+    return np.true_divide(correct, total).tolist()
+
+    # for test_mols in process_bar:
+    #     test_adj, test_afm, test_bft, test_labels = mol_to_input_label(test_mols[0])
+    #     total += test_adj.shape[0]
+    #     test_fps = model.w_embedding(test_adj, test_afm, test_bft)
+    #
+    #     dist_mat = Variable(from_numpy(np.zeros((test_fps.shape[0], top_ks[-1]+1))-2).float())
+    #     labels = Variable(from_numpy(np.zeros((test_fps.shape[0], top_ks[-1]+1))-2).long())
+    #
+    #     for train_mols in train_loader:
+    #         train_adj, train_afm, train_bft, train_labels = mol_to_input_label(train_mols[0])
+    #         train_fps = model.w_embedding(train_adj, train_afm, train_bft)
+    #
+    #         next_dist_mat = cosine_sim(test_fps, train_fps)
+    #         train_labels = train_labels[0].max(dim=0)[1].unsqueeze(0).expand(next_dist_mat.shape)
+    #         dist_mat, top_indices = torch.topk(torch.cat((dist_mat, next_dist_mat), dim=1), top_ks[-1] + 1, dim=1, largest=True)
+    #         labels = torch.cat((labels, train_labels), dim=1)
+    #         labels = torch.cat([labels[i][top_indices[i]].unsqueeze(0) for i in range(top_indices.shape[0])], dim=0)
+    #
+    #     labels = to_numpy(labels.data) + np.arange(labels.shape[0]).reshape(labels.shape[0], -1) * test_labels.shape[1]
+    #     # (labels + Variable(torch.arange(labels.shape[0]).long().unsqueeze(1) * test_labels.shape[1])).data)
+    #
+    #     # nn_labels = np.zeros(test_labels.shape, dtype=np.uint8)
+    #     # nn_labels.reshape(-1)[np.unique(to_numpy(labels.view(-1).data))] = 1
+    #     # nn_labels = Variable(from_numpy(nn_labels).byte())
+    #     # for i in range(labels.shape[0]):
+    #     #     nn_labels[i][labels[i]] = 1
+    #
+    #     for i, topk in enumerate(top_ks):
+    #         sub_labels = labels[:,0:topk]
+    #         nn_labels = np.zeros(test_labels.shape, dtype=np.uint8)
+    #         nn_labels.reshape(-1)[np.unique(sub_labels.reshape(-1))] = 1
+    #         nn_labels = Variable(from_numpy(nn_labels).byte())
+    #         correct[i] += (nn_labels.mul(test_labels) > 0).sum().data[0]
+
+    return np.true_divide(correct, total).tolist()
+
+    # train_adj, train_afm, train_bft, train_labels = mol_to_input_label(train_loader.dataset.getall())
+    # train_fps = model.w_embedding(train_adj, train_afm, train_bft)
+    # del train_adj, train_afm, train_bft
+    # test_adj, test_afm, test_bft, test_labels = mol_to_input_label(test_loader.dataset.getall())
+    # test_fps = model.w_embedding(test_adj, test_afm, test_bft)
+    # del test_adj, test_afm, test_bft
+    #
+    # dist_mat = cosine_sim(test_fps, train_fps)
+    # correct = []
+    # total = test_fps.shape[0]
+    # top_ks = [1, 5, 10, 30]
     # for i in range(test_fps.shape[0]):
     #     dist_mat = cdist(test_fps[i,:], train_fps, metric='cosine')
-    top_sim = torch.topk(dist_mat, top_ks[-1]+1, dim=1, largest=True)[0]
+    # top_sim = torch.topk(dist_mat, top_ks[-1]+1, dim=1, largest=True)[0]
 
-    for j, topk in enumerate(top_ks):
-        nearestn = dist_mat > top_sim[:, topk].unsqueeze(1)
-        nn_labels = torch.matmul(nearestn, train_labels)
-        correct.append((torch.mul(nn_labels, test_labels) > 0).sum().data[0])
-    return np.true_divide(correct, total).tolist()
+    # for j, topk in enumerate(top_ks):
+    #     nearestn = dist_mat > top_sim[:, topk].unsqueeze(1)
+    #     nn_labels = torch.matmul(nearestn, train_labels)
+    #     correct.append((torch.mul(nn_labels, test_labels) > 0).sum().data[0])
+    # return np.true_divide(correct, total).tolist()
 
 
 def mol_to_input(mol):
@@ -494,7 +556,7 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
     #
     # signal.signal(signal.SIGINT, signal_handler)
 
-    # print(test_sgn_model(model, train_loader, validation_loader))
+    print(test_sgn_model(model, train_loader, validation_loader))
 
     for epoch in range(num_epochs):
         print("Epoch: [{}/{}]".format(epoch + 1, num_epochs))

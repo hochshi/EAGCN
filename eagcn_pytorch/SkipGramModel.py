@@ -77,7 +77,7 @@ class SkipGramModel(nn.Module):
         neg_fps = self.c_embedding(*neg_context)
 
         iscore = F.logsigmoid(context_fps.matmul(word_fps.t()))
-        iscore = (iscore - torch.diag(iscore.diag())).sum()
+        iscore = iscore.sum() - iscore.diag().sum()
 
         oscore = F.logsigmoid(neg_fps.neg().matmul(word_fps.t())).sum()
 
