@@ -840,8 +840,8 @@ def mol_collate_func_class(batch):
     orderAtt_list, aromAtt_list, conjAtt_list, ringAtt_list = [], [], [], []
 
     for datum in batch:
-        afm_list.append(datum[1])
-        bft_list.append(datum[2])
+        # afm_list.append(datum[1])
+        # bft_list.append(datum[2])
         label_list.append(datum[3])
         size_list.append(datum[0].shape[0])
     max_size = np.max(size_list) # max of batch    222 for hiv, 132 for tox21,
@@ -850,14 +850,14 @@ def mol_collate_func_class(batch):
     #max_size = max_molsize #max_molsize 132
     # padding
     for datum in batch:
-        filled_adj = np.zeros((max_size, max_size), dtype=np.float32)
+        filled_adj = np.zeros((max_size, max_size), dtype=np.uint8)
         filled_adj[0:datum[0].shape[0], 0:datum[0].shape[0]] = datum[0]
         # filled_afm = np.zeros((max_size, 25), dtype=np.float32)
         # # Originally the number of atom features is set at 25
-        # filled_afm = np.zeros((max_size, atf_len), dtype=np.float32)
-        # filled_afm[0:datum[0].shape[0], :] = datum[1]
-        # filled_bft = np.zeros((btf_len, max_size, max_size), dtype=np.int32)
-        # filled_bft[:, 0:datum[0].shape[0], 0:datum[0].shape[0]] = datum[2]
+        filled_afm = np.zeros((max_size,), dtype=np.uint8)
+        filled_afm[0:datum[0].shape[0]] = datum[1]
+        filled_bft = np.zeros((max_size, max_size), dtype=np.uint8)
+        filled_bft[0:datum[0].shape[0], 0:datum[0].shape[0]] = datum[2]
         #
         # filled_orderAtt = np.zeros((5, max_size, max_size), dtype=np.float32)
         # filled_orderAtt[:, 0:datum[0].shape[0], 0:datum[0].shape[0]] = datum[3]
@@ -872,8 +872,8 @@ def mol_collate_func_class(batch):
         # filled_ringAtt[:, 0:datum[0].shape[0], 0:datum[0].shape[0]] = datum[6]
 
         adj_list.append(filled_adj)
-        # afm_list.append(filled_afm)
-        # bft_list.append(filled_bft)
+        afm_list.append(filled_afm)
+        bft_list.append(filled_bft)
         # orderAtt_list.append(filled_orderAtt)
         # aromAtt_list.append(filled_aromAtt)
         # conjAtt_list.append(filled_conjAtt)
@@ -881,9 +881,9 @@ def mol_collate_func_class(batch):
 
     return ([
         from_numpy(np.array(adj_list)).long(),
-        from_numpy(np.concatenate(afm_list)).long(),
-        from_numpy(np.concatenate(bft_list)).long(),
-        from_numpy(np.array(label_list)).long()
+        from_numpy(np.array(afm_list)).long(),
+        from_numpy(np.array(bft_list)).long(),
+        from_numpy(np.array(label_list)).byte()
     ])
     # return ([from_numpy(np.array(adj_list)), from_numpy(np.array(afm_list)),
     #          from_numpy(np.array(bft_list)), from_numpy(np.array(orderAtt_list)),

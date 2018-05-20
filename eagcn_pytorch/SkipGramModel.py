@@ -19,28 +19,22 @@ class SkipGramMolEmbed(nn.Module):
         self.node_embeddings = nn.Embedding(len(node_to_ix), fp_len, sparse=True)
 
     def embed_edges(self, adjs, bfts):
-        nz = adjs.view(-1).byte()
-        new_edges = Variable(from_numpy(np.zeros(nz.shape + (self.fp_len,))).float())
-        new_edges[nz.unsqueeze(1).expand(-1, self.fp_len)] = self.edge_embeddings(bfts).view(-1)
-        return new_edges.view(adjs.shape + (-1,)).permute(0, 3, 1, 2).contiguous()
+        return self.edge_embeddings(bfts.view(-1)).mul(adjs.view(-1).unsqueeze(1).float()).view(bfts.shape + (-1,))
 
     def embed_nodes(self, adjs, afms):
-        nz, _ = adjs.max(dim=2)
-        nz = nz.view(-1).byte()
-        new_nodes = Variable(from_numpy(np.zeros(nz.shape + (self.fp_len,))).float())
-        new_nodes[nz.unsqueeze(1).expand(-1, self.fp_len)] = self.node_embeddings(afms).view(-1)
-        return new_nodes.view(adjs.shape[0:-1] + (-1,)).permute(0, 2, 1).contiguous()
+        nz = adjs.max(dim=2)[0].float()
+        return self.node_embeddings(afms.view(-1)).mul(nz.view(-1).unsqueeze(1)).view(nz.shape + (-1,))
 
     def get_next_node(self, adj_mat, node_data, edge_data):
-        lna = torch.mul(adj_mat.unsqueeze(1).expand(-1, self.fp_len, -1, -1).float(), node_data.unsqueeze(3))
-        lnb = torch.mul(adj_mat.unsqueeze(1).expand((-1, self.fp_len, -1, -1)).float(), edge_data)
-        return torch.mul(lna, lnb).sum(dim=3)
+        return edge_data.mul(node_data.unsqueeze(1)).sum(dim=-2)
 
     def forward(self, adjs, afms, bfts):
-        edge_data = self.embed_edges(adjs, bfts)
+        adjs_no_diag = torch.clamp(adjs - Variable(from_numpy(np.eye(adjs.size()[1])).long()), min=0)
+
+        edge_data = self.embed_edges(adjs_no_diag, bfts)
         node_data = self.embed_nodes(adjs, afms)
 
-        adjs_no_diag = torch.clamp(adjs - Variable(from_numpy(np.eye(adjs.size()[1])).long()), min=0)
+
 
         node_current = node_data
         adj_mat = adjs_no_diag
@@ -52,8 +46,7 @@ class SkipGramMolEmbed(nn.Module):
         for radius in range(self.radius):
             node_next = self.get_next_node(adj_mat, node_next, edge_data)
             fps.append(node_next)
-        fps = torch.cat(fps, dim=1).sum(dim=-1)
-        return fps
+        return torch.cat(fps, dim=-1).sum(dim=-2)
 
 class SkipGramModel(nn.Module):
     """

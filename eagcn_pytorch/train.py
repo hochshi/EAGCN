@@ -87,7 +87,7 @@ if dataset == 'pubchem_chembl' or dataset == 'small_batch_test':
     n_sgc1_1, n_sgc1_2, n_sgc1_3, n_sgc1_4, n_sgc1_5 = 20, 20, 20, 20, 20
     n_sgc2_1, n_sgc2_2, n_sgc2_3, n_sgc2_4, n_sgc2_5 = 60, 20, 20, 20, 20
     # batch_size = 16384
-    batch_size = 64
+    batch_size = 2
     weight_decay = 0.0001  # L-2 Norm
     dropout = 0.3
     random_state = 11
@@ -352,7 +352,7 @@ def test_sgn_model(model, train_loader, test_loader):
 
     for j, topk in enumerate(top_ks):
         nearestn = dist_mat > top_sim[:, topk].unsqueeze(1)
-        nn_labels = torch.matmul(nearestn.double(), train_labels)
+        nn_labels = torch.matmul(nearestn, train_labels)
         correct.append((torch.mul(nn_labels, test_labels) > 0).sum().data[0])
     return np.true_divide(correct, total).tolist()
 
@@ -377,7 +377,8 @@ def simplify_input(x_all):
     return [[
         x[1].astype(np.uint8),
         x[0][:,0].astype(np.uint8),
-        x[2][x[1].astype(np.bool)].astype(np.uint8)
+        x[2].astype(np.uint8)
+        # x[2][x[1].astype(np.bool)].astype(np.uint8)
     ] for x in x_all]
 
 
@@ -492,6 +493,8 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
     #     sys.exit(0)
     #
     # signal.signal(signal.SIGINT, signal_handler)
+
+    # print(test_sgn_model(model, train_loader, validation_loader))
 
     for epoch in range(num_epochs):
         print("Epoch: [{}/{}]".format(epoch + 1, num_epochs))
