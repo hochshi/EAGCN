@@ -421,6 +421,10 @@ def test_sgn_model(model, train_loader, test_loader):
     # return np.true_divide(correct, total).tolist()
 
 
+def test_wrapper(model, train_loader, validation_loader):
+    print("Testing Model:")
+    print(test_sgn_model(model, train_loader, validation_loader))
+
 def mol_to_input(mol):
     return (
         Variable(mol[adj_pos]),
@@ -512,10 +516,12 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
                                                                                      loader_func=construct_sgm_loader)
     del x_all, y_all, target
 
-    # import signal
-    # import sys
-    # def signal_handler(signal, frame):
-    #     print('You pressed Ctrl+C!')
+    import signal
+    import sys
+    def signal_handler(signal, frame):
+        print('You pressed Ctrl+C!')
+        test_wrapper(model, train_loader, validation_loader)
+        sys.exit(0)
     #     if precision_recall:
     #         print("Calculating train precision and recall...")
     #         tpre, trec, tspe, tacc = test_model(test_loader, model, tasks)
@@ -556,14 +562,16 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
     #         # return (test_auc_tot)
     #     sys.exit(0)
     #
-    # signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGINT, signal_handler)
 
     # print(test_sgn_model(model, train_loader, validation_loader))
 
+    tot_loss = [0] * 4
     for epoch in trange(num_epochs):
         # print("Epoch: [{}/{}]".format(epoch + 1, num_epochs))
-        tot_loss = 0
         # for i, (adj, afm, btf, orderAtt, aromAtt, conjAtt, ringAtt, labels) in enumerate(train_loader):
+        tot_loss.pop()
+        tot_loss.append(0)
         process_bar = tqdm(train_loader)
         process_bar.set_description("Loss: {}".format(tot_loss))
         for pos_context, neg_context, sizes, padding in process_bar:
@@ -578,15 +586,15 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
             # weights = weight_func(BCE_weight, labels)
             # loss = loss_func(output_transform(outputs),labels, weights)
             loss = model(mol_to_input(pos_context), mol_to_input(neg_context), sizes, padding)
-            tot_loss += loss.data[0]
+            tot_loss[-1] += loss.data[0]
             loss.backward()
             optimizer.step()
-            process_bar.set_description("Loss: {}".format(tot_loss))
+            process_bar.set_description("Loss: {}".format(tot_loss[-1]))
 
         # report performance
         # if (0 == (epoch-9) % 2 ):
         #     print(test_sgn_model(model, train_loader, validation_loader))
-    print(test_sgn_model(model, train_loader, validation_loader))
+    test_wrapper()
 """
         if False:
             if precision_recall:
