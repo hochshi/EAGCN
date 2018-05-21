@@ -26,6 +26,7 @@ from SkipGramModel import *
 from scipy.spatial.distance import cdist
 from tqdm import tqdm
 from tqdm import trange
+from collections import deque
 
 # Training settings
 dataset = 'small_batch_test'  # 'tox21', 'hiv', 'pubchem_chembl', 'small_batch_test'
@@ -574,12 +575,12 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
 
     # print(test_sgn_model(model, train_loader, validation_loader))
 
-    tot_loss = [0] * 4
+    tot_loss = deque([0] * 4)
     process_bar0 = trange(num_epochs)
     for epoch in process_bar0:
         # print("Epoch: [{}/{}]".format(epoch + 1, num_epochs))
         # for i, (adj, afm, btf, orderAtt, aromAtt, conjAtt, ringAtt, labels) in enumerate(train_loader):
-        tot_loss.pop()
+        tot_loss.popleft()
         tot_loss.append(0)
         process_bar0.set_description("Loss: {}".format(tot_loss))
         process_bar = tqdm(train_loader)
