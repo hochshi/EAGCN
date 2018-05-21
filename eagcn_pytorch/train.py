@@ -422,6 +422,14 @@ def test_sgn_model(model, train_loader, test_loader):
 
 
 def test_wrapper(model, train_loader, validation_loader):
+    import signal
+    import sys
+
+    def signal_handler(signal, frame):
+        sys.exit(0)
+
+    signal.signal(signal.SIGINT, signal_handler)
+
     print("Testing Model:")
     print(test_sgn_model(model, train_loader, validation_loader))
 
@@ -567,11 +575,13 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
     # print(test_sgn_model(model, train_loader, validation_loader))
 
     tot_loss = [0] * 4
-    for epoch in trange(num_epochs):
+    process_bar0 = trange(num_epochs)
+    for epoch in process_bar0:
         # print("Epoch: [{}/{}]".format(epoch + 1, num_epochs))
         # for i, (adj, afm, btf, orderAtt, aromAtt, conjAtt, ringAtt, labels) in enumerate(train_loader):
         tot_loss.pop()
         tot_loss.append(0)
+        process_bar0.set_description("Loss: {}".format(tot_loss))
         process_bar = tqdm(train_loader)
         process_bar.set_description("Loss: {}".format(tot_loss))
         for pos_context, neg_context, sizes, padding in process_bar:
