@@ -580,7 +580,7 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
     #
     signal.signal(signal.SIGINT, signal_handler)
 
-    print(test_sgn_model(model, train_loader, validation_loader))
+    # print(test_sgn_model(model, train_loader, validation_loader))
 
     tot_loss = deque([0] * 4)
     process_bar0 = trange(num_epochs)
@@ -610,9 +610,9 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
             process_bar.set_description("Loss: {}".format(tot_loss[-1]))
 
         # report performance
-        # if (0 == (epoch-9) % 2 ):
-        #     print(test_sgn_model(model, train_loader, validation_loader))
-    test_wrapper()
+        if (0 == (epoch-9) % 10 ):
+            test_wrapper(model, train_loader, validation_loader)
+    test_wrapper(model, train_loader, validation_loader)
 """
         if False:
             if precision_recall:
