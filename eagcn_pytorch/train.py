@@ -25,6 +25,7 @@ from time import gmtime, strftime
 from SkipGramModel import *
 from scipy.spatial.distance import cdist
 from tqdm import tqdm
+from tqdm import trange
 
 # Training settings
 dataset = 'small_batch_test'  # 'tox21', 'hiv', 'pubchem_chembl', 'small_batch_test'
@@ -346,7 +347,8 @@ def test_sgn_model(model, train_loader, test_loader):
 
         dist_mats = []
         labels = []
-        for train_mols in train_loader:
+        process_bar2 = tqdm(train_loader)
+        for train_mols in process_bar2:
             train_adj, train_afm, train_bft, train_labels = mol_to_input_label(train_mols[0])
             train_fps = model.w_embedding(train_adj, train_afm, train_bft)
             dist_mats.append(cosine_sim(test_fps, train_fps))
@@ -558,11 +560,12 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
 
     # print(test_sgn_model(model, train_loader, validation_loader))
 
-    for epoch in range(num_epochs):
-        print("Epoch: [{}/{}]".format(epoch + 1, num_epochs))
+    for epoch in trange(num_epochs):
+        # print("Epoch: [{}/{}]".format(epoch + 1, num_epochs))
         tot_loss = 0
         # for i, (adj, afm, btf, orderAtt, aromAtt, conjAtt, ringAtt, labels) in enumerate(train_loader):
         process_bar = tqdm(train_loader)
+        process_bar.set_description("Loss: {}".format(tot_loss))
         for pos_context, neg_context, sizes, padding in process_bar:
             optimizer.zero_grad()
             model.zero_grad()
@@ -578,7 +581,7 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
             tot_loss += loss.data[0]
             loss.backward()
             optimizer.step()
-            print("Total loss: {}".format(loss))
+            process_bar.set_description("Loss: {}".format(tot_loss))
 
         # report performance
         # if (0 == (epoch-9) % 2 ):
