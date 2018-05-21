@@ -19,8 +19,8 @@ from torch import nn
 import torch.nn.functional as F
 from collections import defaultdict
 
-use_cuda = torch.cuda.is_available()
-
+# use_cuda = torch.cuda.is_available()
+use_cuda = False
 
 if use_cuda:
     FloatTensor = torch.cuda.FloatTensor
@@ -844,7 +844,10 @@ def mol_collate_func_class(batch):
         # bft_list.append(datum[2])
         label_list.append(datum[3])
         size_list.append(datum[0].shape[0])
-    max_size = np.max(size_list) # max of batch    222 for hiv, 132 for tox21,
+    try:
+        max_size = np.max(size_list) # max of batch    222 for hiv, 132 for tox21,
+    except ValueError:
+        return None
     # btf_len = 1 #datum[2].shape[0]
     # atf_len = datum[1].shape[1]
     #max_size = max_molsize #max_molsize 132

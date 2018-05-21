@@ -556,14 +556,14 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
     #
     # signal.signal(signal.SIGINT, signal_handler)
 
-    print(test_sgn_model(model, train_loader, validation_loader))
+    # print(test_sgn_model(model, train_loader, validation_loader))
 
     for epoch in range(num_epochs):
         print("Epoch: [{}/{}]".format(epoch + 1, num_epochs))
         tot_loss = 0
         # for i, (adj, afm, btf, orderAtt, aromAtt, conjAtt, ringAtt, labels) in enumerate(train_loader):
-        process_bar = tqdm(enumerate(train_loader))
-        for i, (pos_context, neg_context, sizes, padding) in process_bar:
+        process_bar = tqdm(train_loader)
+        for pos_context, neg_context, sizes, padding in process_bar:
             optimizer.zero_grad()
             model.zero_grad()
             # afm, axfm = embed_nodes(adj, afm)
@@ -578,10 +578,12 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
             tot_loss += loss.data[0]
             loss.backward()
             optimizer.step()
+            print("Total loss: {}".format(loss))
 
         # report performance
-        if (0 == (epoch-9) % 2 ):
-            print(test_sgn_model(model, train_loader, validation_loader))
+        # if (0 == (epoch-9) % 2 ):
+        #     print(test_sgn_model(model, train_loader, validation_loader))
+    print(test_sgn_model(model, train_loader, validation_loader))
 """
         if False:
             if precision_recall:
