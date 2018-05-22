@@ -307,7 +307,7 @@ class MolGCN(nn.Module):
 
         self.bn = nn.BatchNorm1d(fp_len, affine=False)
 
-        self.classifier = nn.Linear(fp_len, nclass)
+        # self.classifier = nn.Linear(fp_len, nclass)
 
     def _make_layer(self, in_channels, out_channels):
         return nn.Sequential(
@@ -326,7 +326,8 @@ class MolGCN(nn.Module):
         # x = x.squeeze(-1).squeeze(-1).sum(dim=2)
         # x = x.sum(dim=-1).view(x.shape[0], -1)
         # x = self.bn(x.view(x.shape[0], -1))
-        return self.classifier(x.view(x.shape[0], -1)), x
+        # return self.classifier(x.view(x.shape[0], -1)), x
+        return x.view(x.shape[0], -1)
 
 class NodeBatchNorm(nn.Module):
     def __init__(self, attr_len):
