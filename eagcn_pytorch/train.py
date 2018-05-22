@@ -476,7 +476,7 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
     signal.signal(signal.SIGINT, signal_handler)
 
     print("Testing model:")
-    print(test_sgn_model(model, train_loader, test_loader))
+    # print(test_sgn_model(model, train_loader, test_loader))
 
     for epoch in range(num_epochs):
         model.train()
@@ -493,8 +493,10 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
             weights = weight_func(BCE_weight, labels)
             # loss = loss_func(output_transform(outputs),labels, weights)
             labels = labels.matmul(labels.t())
+            labels = labels - torch.diag(labels.diag())
             sim = cosine_sim(outputs, outputs)
-            loss = (1-sim).mul(labels).sum() + sim.mul(1-labels).clamp(max=0).sum()
+            loss = (1-sim).mul(labels).sum()
+            # loss = (1-sim).mul(labels).sum() + sim.mul(1-labels).clamp(max=0).sum()
             # loss = loss/((labels.shape[0]-1) ** 2)
             tot_loss += loss.data[0]
             loss.backward()
