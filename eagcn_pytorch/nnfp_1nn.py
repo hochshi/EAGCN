@@ -34,6 +34,9 @@ num_epochs = 80
 weight_decay = 0.0001  # L-2 Norm
 learning_rate = 0.0005
 
+def ext_jac(x,y):
+    abs_val = np.abs(x-y)
+    return 1 - np.divide(x+y-abs_val,x+y+abs_val).sum()
 
 def test_model(dist_mat, train_labels, true_labels):
     # We assume that the dist matrix is 4 sub matrices, train vs. train train vs. something else.
@@ -48,7 +51,7 @@ def test_model(dist_mat, train_labels, true_labels):
     #     top_ks = np.array(top_ks) - 1
     for i, topk in enumerate(top_ks):
         nn = np.partition(sub_mat, topk, axis=1)
-        nn = sub_mat < nn[:, topk].reshape(-1, 1)
+        nn = sub_mat <= nn[:, topk-1].reshape(-1, 1)
         nn_labels = np.matmul(nn, train_labels)
         correct[i] = (np.multiply(nn_labels, true_labels) > 0).sum()
     return np.true_divide(correct, total).tolist()
@@ -71,3 +74,11 @@ del train_val
 train_test = cdist(test_fps, train_fps, metric='cosine')
 print(test_model(train_test, train_labels, test_labels))
 del train_test
+
+
+# train_val = cdist(val_fps, train_fps, metric=ext_jac)
+# print(test_model(train_val, train_labels, val_labels))
+# del train_val
+# train_test = cdist(test_fps, train_fps, metric=ext_jac)
+# print(test_model(train_test, train_labels, test_labels))
+# del train_test
