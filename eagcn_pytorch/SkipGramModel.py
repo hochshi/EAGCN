@@ -91,8 +91,8 @@ class SkipGramModel(nn.Module):
     def forward(self, pos_context, neg_context, sizes, padding):
 
         word_fps = self.w_embedding(*pos_context[0:-1])
-        correct_label = pos_context[-1].max(dim=-1)[1].data[0]
-        correct_labels = Variable(from_numpy(np.array([correct_label] * word_fps.shape[0])))
+        correct_labels = pos_context[-1].max(dim=-1)[1]
+        correct_label = sizes[0]
         dists = []
         for i, neg in enumerate(neg_context):
             neg_fps = self.w_embedding(*neg[0:-1])
@@ -165,7 +165,7 @@ class SkipGramModelDataset(Dataset):
         return OrderedDict([
             ('context', context),
             ('neg', neg),
-            ('context_size', [len(context)])
+            ('context_size', [item])
         ])
 
     def getall(self):
