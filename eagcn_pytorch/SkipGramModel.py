@@ -15,8 +15,8 @@ class SkipGramMolEmbed(nn.Module):
         self.fp_len = fp_len
         self.edge_word_len = edge_word_len
         self.node_word_len = node_word_len
-        self.edge_embeddings = nn.Embedding(len(edge_to_ix), fp_len, sparse=True)
-        self.node_embeddings = nn.Embedding(len(node_to_ix), fp_len, sparse=True)
+        self.edge_embeddings = nn.Embedding(len(edge_to_ix), fp_len, sparse=False)
+        self.node_embeddings = nn.Embedding(len(node_to_ix), fp_len, sparse=False)
 
     def embed_edges(self, adjs, bfts):
         return self.edge_embeddings(bfts.view(-1)).mul(adjs.view(-1).unsqueeze(1).float()).view(bfts.shape + (-1,))
@@ -74,17 +74,25 @@ class SkipGramModel(nn.Module):
     def euclidean_dist(x,y):
         X = x.pow(2).sum(dim=-1).view(x.shape[-2], -1)
         Y = y.pow(2).sum(dim=-1).view(-1, y.shape[-2])
-        return (X + Y -2*x.matmul(y.t())).sqrt()
+        return (X + Y - 2 * x.matmul(y.t()))
+        # return (X + Y -2*x.matmul(y.t())).sqrt()
 
     @staticmethod
     def remove_diag(x):
         return x[1 - from_numpy(np.eye(x.shape[0])).byte()].view(x.shape[-2], -1)
 
+    @staticmethod
+    def cosine_sim(A, B, eps=1e-8):
+        dist_mat = torch.matmul(A, B.t())
+        w1 = torch.norm(A, 2, 1).unsqueeze(1).expand(-1, B.shape[0])
+        w2 = torch.norm(B, 2, 1).unsqueeze(0).expand(A.shape[0], -1)
+        return dist_mat / (w1 * w2).clamp(min=eps)
+
     def forward(self, pos_context, neg_context, sizes, padding):
 
         word_fps = self.w_embedding(*pos_context[0:-1])
-        correct_labels = pos_context[-1].max(dim=-1)[1]
-        correct_label = correct_labels.data[0]
+        correct_label = pos_context[-1].max(dim=-1)[1].data[0]
+        correct_labels = Variable(from_numpy(np.array([correct_label] * word_fps.shape[0])))
         dists = []
         for i, neg in enumerate(neg_context):
             neg_fps = self.w_embedding(*neg[0:-1])
@@ -92,9 +100,12 @@ class SkipGramModel(nn.Module):
                 dist = self.remove_diag(self.euclidean_dist(word_fps, neg_fps))
             else:
                 dist = self.euclidean_dist(word_fps, neg_fps)
+            # dists.append(dist)
+            # dist = self.euclidean_dist(word_fps, neg_fps)
+            # dist = self.cosine_sim(word_fps, neg_fps)
             dists.append(dist.min(dim=-1)[0])
 
-        dists = torch.cat(dists, dim=0).view(correct_labels.shape + (-1,))
+        dists = torch.cat(dists, dim=-1).view(correct_labels.shape + (-1,))
         dists = F.softmin(dists, dim=-1).log()
         return F.nll_loss(dists, correct_labels)
 
