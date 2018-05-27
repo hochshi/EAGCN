@@ -78,7 +78,7 @@ class SkipGramModel(nn.Module):
 
     @staticmethod
     def remove_diag(x):
-        return x[1 - torch.eye(x.shape[0]).byte()].view(x.shape[-2], -1)
+        return x[1 - from_numpy(np.eye(x.shape[0])).byte()].view(x.shape[-2], -1)
 
     def forward(self, pos_context, neg_context, sizes, padding):
 
