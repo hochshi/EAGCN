@@ -1,10 +1,142 @@
 from utils import *
 from collections import OrderedDict
+from fractions import gcd
+from sympy.ntheory import factorint
+
 
 def construct_sgm_loader(x, y, target, batch_size, shuffle=True):
     data_set, label_dict = construct_dataset(x, y, target)
     data_set = SkipGramModelDataset(data_set, label_dict)
     return torch.utils.data.DataLoader(dataset=data_set, batch_size=batch_size, collate_fn=SkipGramModelDataset.collate, shuffle=shuffle)
+
+
+def lid(n):
+    factors_dict = factorint(n)
+    factors = sorted(list(factors_dict.keys()), reverse=True)
+    ld = 1
+    for factor in factors[:-1]:
+        ld = ld * (factor ** factors_dict[factor])
+    ld = ld * (factors[-1] ** (factors_dict[factors[-1]] - 1))
+    return ld
+
+class NNMolEmbed(nn.Module):
+    def __init__(self, fp_len, edge_to_ix, edge_word_len, node_to_ix, node_word_len, radius):
+
+        super(NNMolEmbed, self).__init__()
+
+        self.radius = radius
+        self.fp_len = fp_len
+        self.edge_to_ix = edge_to_ix
+        self.edge_word_len = edge_word_len
+        self.node_to_ix = node_to_ix
+        self.node_word_len = node_word_len
+        self.edge_embeddings = nn.Embedding(len(edge_to_ix), fp_len)
+        self.node_embeddings = nn.Embedding(len(node_to_ix), fp_len)
+
+        self.summarize = nn.Conv2d(self.radius, 1, 1, bias=False)
+
+        self.conv = {}
+
+        for rad in range(radius):
+            setattr(self, '_'.join(('conv', 'node', str(rad))),
+                    nn.Conv1d(fp_len, fp_len, kernel_size=1,
+                              stride=1, padding=0, dilation=1, groups=lid(fp_len),
+                              bias=False))
+            self.conv[('node', rad)] = getattr(self, '_'.join(('conv', 'node', str(rad))))
+
+            setattr(self, '_'.join(('conv', 'out', str(rad))),
+                    nn.Conv1d(fp_len, fp_len, kernel_size=1,
+                              stride=1, padding=0, dilation=1,
+                              groups=lid(fp_len),
+                              bias=False))
+            self.conv[('out', rad)] = getattr(self, '_'.join(('conv', 'out', str(rad))))
+
+            setattr(self, '_'.join(('conv', 'neighbor', 'att', str(rad))),
+                    nn.Conv2d(2 * fp_len, fp_len, kernel_size=1,
+                              stride=1,
+                              padding=0, dilation=1, groups=gcd(2 * fp_len, fp_len), bias=False))
+            self.conv[('neighbor', 'att', rad)] = getattr(self, '_'.join(('conv', 'neighbor', 'att', str(rad))))
+
+            setattr(self, '_'.join(('conv', 'neighbor', 'act', str(rad))),
+                    nn.Conv2d(2 * fp_len, fp_len, kernel_size=1, stride=1,
+                              padding=0, dilation=1, groups=gcd(2 * fp_len, fp_len), bias=False))
+            self.conv[('neighbor', 'act', rad)] = getattr(self, '_'.join(('conv', 'neighbor', 'act', str(rad))))
+
+            setattr(self, '_'.join(('conv', 'edge', str(rad))),
+                    nn.Conv2d(fp_len, fp_len,
+                              kernel_size=1, stride=1, padding=0,
+                              dilation=1,
+                              groups=lid(fp_len), bias=False))
+            self.conv[('edge', rad)] = getattr(self, '_'.join(('conv', 'edge', str(rad))))
+
+    def embed_edges(self, adjs, bfts):
+        return self.edge_embeddings(bfts.view(-1)).mul(adjs.view(-1).unsqueeze(1)).view(bfts.shape + (-1,))
+
+    def embed_nodes(self, adjs, afms):
+        nz = adjs.max(dim=2)[0]
+        return self.node_embeddings(afms.view(-1)).mul(nz.view(-1).unsqueeze(1)).view(nz.shape + (-1,))
+
+    def get_node_activation(self, node_data, layer):
+        return self.conv[('out', layer)](node_data).sum(dim=-1)
+
+    def get_next_node(self, node_data, layer):
+        return self.conv[('node', layer)](node_data) + node_data
+
+    def get_next_edge(self, edge_data, layer):
+        return self.conv[('edge', layer)](edge_data) + edge_data
+
+    def get_neighbor_act(self, adj_mat, node_data, edge_data, layer):
+        lna = torch.mul(adj_mat.unsqueeze(1).expand(-1, self.fp_len, -1, -1), node_data.unsqueeze(3))
+        lnb = torch.mul(adj_mat.unsqueeze(1).expand((-1, self.fp_len, -1, -1)), edge_data)
+        ln = torch.cat((lna, lnb), dim=1)
+        att = self.conv[('neighbor', 'att', layer)](ln).sum(dim=2)
+        act = self.conv[('neighbor', 'act', layer)](ln).sum(dim=2)
+        return (att, act)
+
+    @staticmethod
+    def next_radius_adj_mat(adj_mat, adj_mats):
+        next_adj_mat = torch.bmm(adj_mat, adj_mats[0])
+        next_adj_mat[next_adj_mat!=0] = 1
+        next_adj_mat = next_adj_mat - sum(adj_mats)
+        next_adj_mat = torch.clamp(next_adj_mat - Variable(from_numpy(np.eye(next_adj_mat.size()[1])*next_adj_mat.size()[1]).float()), min=0)
+        return next_adj_mat
+
+    @staticmethod
+    def concat_fps(inputs):
+        return torch.cat(inputs, dim=1).view(inputs[0].shape[0], len(inputs), inputs[0].shape[1], -1)
+
+    def forward(self, adjs, afms, bfts):  # bfts
+        adjs = adjs.float()
+        adjs_no_diag = torch.clamp(adjs - Variable(from_numpy(np.eye(adjs.size()[1])).float()), min=0)
+        edge_data = self.embed_edges(adjs_no_diag, bfts).permute(0, 3, 1, 2)
+        node_data = self.embed_nodes(adjs, afms).permute(0, 2, 1)
+
+        nz, _ = adjs.max(dim=2)
+
+        fps = []
+
+        node_current = node_data
+        edge_current = edge_data
+        adj_mat = adjs_no_diag
+        adj_mats = []
+
+        for radius in range(self.radius):
+            fp = self.get_node_activation(node_current, radius)
+            fps.append(fp)
+
+            node_next = self.get_next_node(node_current, radius) # node_current
+            neighbor_att, neighbor_act = self.get_neighbor_act(adj_mat, node_current, edge_current, radius) # get neighbor activation
+            node_next = torch.mul(node_next, neighbor_att) + neighbor_act
+
+            edge_next = torch.matmul(adj_mat.unsqueeze(1).expand((-1, self.fp_len, -1, -1)), edge_current)
+            adj_mats.append(adj_mat)
+            adj_mat = self.next_radius_adj_mat(adj_mat, adj_mats)
+            edge_next = self.get_next_edge(edge_next, radius).mul(adj_mat.unsqueeze(1))
+
+            node_current, edge_current = node_next, edge_next
+
+        return torch.cat(fps, dim=-1)
+        # return self.summarize(self.concat_fps(fps))
 
 class SkipGramMolEmbed(nn.Module):
     def __init__(self, fp_len, edge_to_ix, edge_word_len, node_to_ix, node_word_len, radius):
@@ -58,8 +190,9 @@ class SkipGramModel(nn.Module):
 
     def __init__(self, fp_len, edge_to_ix, edge_word_len, node_to_ix, node_word_len, radius):
         super(SkipGramModel, self).__init__()
-        self.w_embedding = SkipGramMolEmbed(fp_len, edge_to_ix, edge_word_len, node_to_ix, node_word_len, radius)
+        # self.w_embedding = SkipGramMolEmbed(fp_len, edge_to_ix, edge_word_len, node_to_ix, node_word_len, radius)
         # self.c_embedding = SkipGramMolEmbed(fp_len, edge_to_ix, edge_word_len, node_to_ix, node_word_len, radius)
+        self.w_embedding = NNMolEmbed(fp_len, edge_to_ix, edge_word_len, node_to_ix, node_word_len, radius+1)
         self.init_emb()
 
     def init_emb(self):
@@ -90,39 +223,39 @@ class SkipGramModel(nn.Module):
 
     def forward(self, pos_context, neg_context, sizes, padding):
 
-        word_fps = self.w_embedding(*pos_context[0:-1])
-        neg_fps = self.w_embedding(torch.cat([neg[0] for neg in neg_context], dim=0),
-                                   torch.cat([neg[1] for neg in neg_context], dim=0),
-                                   torch.cat([neg[2] for neg in neg_context], dim=0))
-
-        dists = self.euclidean_dist(word_fps, neg_fps)
-        self_dist = self.remove_diag(self.euclidean_dist(word_fps, word_fps))
-        correct_labels = self_dist.min(dim=-1)[1] + dists.shape[1]
-        dists = torch.cat([dists, self_dist], dim=-1)
-
-        return F.nll_loss(F.softmin(dists, dim=-1).log(), correct_labels)
+        # word_fps = self.w_embedding(*pos_context[0:-1])
+        # neg_fps = self.w_embedding(torch.cat([neg[0] for neg in neg_context], dim=0),
+        #                            torch.cat([neg[1] for neg in neg_context], dim=0),
+        #                            torch.cat([neg[2] for neg in neg_context], dim=0))
+        #
+        # dists = self.euclidean_dist(word_fps, neg_fps)
+        # self_dist = self.remove_diag(self.euclidean_dist(word_fps, word_fps))
+        # correct_labels = self_dist.min(dim=-1)[1] + dists.shape[1]
+        # dists = torch.cat([dists, self_dist], dim=-1)
+        #
+        # return F.nll_loss(F.softmin(dists, dim=-1).log(), correct_labels)
 
 
         # word_self = (torch.cat([neg[-1].max(dim=-1)[1] for neg in neg_context]) == sizes[0]).view(-1, dists.shape[1]).expand(dists.shape[0], -1)
         #
-        # word_fps = self.w_embedding(*pos_context[0:-1])
-        # correct_labels = pos_context[-1].max(dim=-1)[1]
-        # correct_label = sizes[0]
-        # dists = []
-        # for i, neg in enumerate(neg_context):
-        #     neg_fps = self.w_embedding(*neg[0:-1])
-        #     if correct_label == i:
-        #         dist = self.remove_diag(self.euclidean_dist(word_fps, neg_fps))
-        #     else:
-        #         dist = self.euclidean_dist(word_fps, neg_fps)
+        word_fps = self.w_embedding(*pos_context[0:-1])
+        correct_labels = pos_context[-1].max(dim=-1)[1]
+        correct_label = sizes[0]
+        dists = []
+        for i, neg in enumerate(neg_context):
+            neg_fps = self.w_embedding(*neg[0:-1])
+            if correct_label == i:
+                dist = self.remove_diag(self.euclidean_dist(word_fps, neg_fps))
+            else:
+                dist = self.euclidean_dist(word_fps, neg_fps)
         #     # dists.append(dist)
         #     # dist = self.euclidean_dist(word_fps, neg_fps)
         #     # dist = self.cosine_sim(word_fps, neg_fps)
-        #     dists.append(dist.min(dim=-1)[0])
+            dists.append(dist.min(dim=-1)[0])
         #
-        # dists = torch.cat(dists, dim=-1).view(correct_labels.shape + (-1,))
-        # dists = F.softmin(dists, dim=-1).log()
-        # return F.nll_loss(dists, correct_labels)
+        dists = torch.cat(dists, dim=-1).view(correct_labels.shape + (-1,))
+        dists = F.softmin(dists, dim=-1).log()
+        return F.nll_loss(dists, correct_labels)
 
         # pos_scores =
         # neg_scores = self.euclidean_dist(word_fps, neg_fps)
@@ -176,7 +309,7 @@ class SkipGramModelDataset(Dataset):
             [mol.to_collate() for mol in np.random.choice(mols, size=np.max((1, len(mols)/10)))]
             for mols in self.label_data_dict.values()
         ]
-        del neg[item]
+        neg[item] = context
         return OrderedDict([
             ('context', context),
             ('neg', neg),
