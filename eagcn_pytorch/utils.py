@@ -18,9 +18,10 @@ from torch.autograd import Variable
 from torch import nn
 import torch.nn.functional as F
 from collections import defaultdict
+from collections import OrderedDict
 
-# use_cuda = torch.cuda.is_available()
-use_cuda = False
+use_cuda = torch.cuda.is_available()
+# use_cuda = False
 
 if use_cuda:
     FloatTensor = torch.cuda.FloatTensor
@@ -739,7 +740,10 @@ def construct_dataset(x_all, y_all, target):
         mol_dat = MolDatum(x_all[i], y_all[i], target, i)
         output.append(mol_dat)
         label_dict[np.argmax(y_all[i])].append(mol_dat)
-    return(output, label_dict)
+    ord_label_dict = OrderedDict()
+    for i in range(len(label_dict)):
+        ord_label_dict[i] = label_dict[i]
+    return(output, ord_label_dict)
 
 class MolDataset(Dataset):
     """
@@ -830,7 +834,7 @@ def mol_collate_func_reg(batch):
     #              torch.from_numpy(np.array(ringAtt_list)),
     #              torch.from_numpy(np.array(label_list))])
 
-def mol_collate_func_class(batch):
+def mol_collate_func_class(batch, max_size=None):
 
     adj_list = []
     afm_list =[]
@@ -844,10 +848,11 @@ def mol_collate_func_class(batch):
         # bft_list.append(datum[2])
         label_list.append(datum[3])
         size_list.append(datum[0].shape[0])
-    try:
-        max_size = np.max(size_list) # max of batch    222 for hiv, 132 for tox21,
-    except ValueError:
-        return None
+    if max_size is None:
+        try:
+            max_size = np.max(size_list) # max of batch    222 for hiv, 132 for tox21,
+        except ValueError:
+            return None
     # btf_len = 1 #datum[2].shape[0]
     # atf_len = datum[1].shape[1]
     #max_size = max_molsize #max_molsize 132

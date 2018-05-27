@@ -532,12 +532,12 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
                                                                                      loader_func=construct_sgm_loader)
     del x_all, y_all, target
 
-    import signal
-    import sys
-    def signal_handler(signal, frame):
-        print('You pressed Ctrl+C!')
-        test_wrapper(model, train_loader, validation_loader)
-        sys.exit(0)
+    # import signal
+    # import sys
+    # def signal_handler(signal, frame):
+    #     print('You pressed Ctrl+C!')
+    #     test_wrapper(model, train_loader, validation_loader)
+    #     sys.exit(0)
     #     if precision_recall:
     #         print("Calculating train precision and recall...")
     #         tpre, trec, tspe, tacc = test_model(test_loader, model, tasks)
@@ -578,15 +578,13 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
     #         # return (test_auc_tot)
     #     sys.exit(0)
     #
-    signal.signal(signal.SIGINT, signal_handler)
+    # signal.signal(signal.SIGINT, signal_handler)
 
     # print(test_sgn_model(model, train_loader, validation_loader))
 
     tot_loss = deque([0] * 4)
     process_bar0 = trange(num_epochs)
     for epoch in process_bar0:
-        # print("Epoch: [{}/{}]".format(epoch + 1, num_epochs))
-        # for i, (adj, afm, btf, orderAtt, aromAtt, conjAtt, ringAtt, labels) in enumerate(train_loader):
         tot_loss.popleft()
         tot_loss.append(0)
         process_bar0.set_description("Loss: {}".format(tot_loss))
@@ -595,19 +593,12 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
         for pos_context, neg_context, sizes, padding in process_bar:
             optimizer.zero_grad()
             model.zero_grad()
-            # afm, axfm = embed_nodes(adj, afm)
-            # btf = embed_edges(adj, btf)
-            # outputs, _ = model(Variable(adj), Variable(afm), Variable(axfm), Variable(btf))
-            # outputs, _ = model(mol_to_input(mol_word), mol_to_input(pos_context), mol_to_input(neg_context))
-            # labels = Variable(labels.float())
-            # non_nan_num = ((labels == 1).sum() + (labels == 0).sum()).float()
-            # weights = weight_func(BCE_weight, labels)
-            # loss = loss_func(output_transform(outputs),labels, weights)
-            loss = model(mol_to_input(pos_context), mol_to_input(neg_context), sizes, padding)
+            loss = model(mol_to_input_label(pos_context), [mol_to_input_label(neg) for neg in neg_context], sizes, padding)
             tot_loss[-1] += loss.data[0]
             loss.backward()
             optimizer.step()
             process_bar.set_description("Loss: {}".format(tot_loss[-1]))
+            process_bar0.set_description("Loss: {}".format(tot_loss))
 
         # report performance
         if (0 == (epoch-9) % 10 ):
