@@ -5,8 +5,8 @@ from sympy.ntheory import factorint
 
 
 def construct_sgm_loader(x, y, target, batch_size, shuffle=True):
-    data_set, label_dict = construct_dataset(x, y, target)
-    data_set = SkipGramModelDataset(data_set, label_dict)
+    data_set, labels, label_dict = construct_dataset(x, y, target)
+    data_set = SkipGramModelDataset(data_set, labels, label_dict)
     return torch.utils.data.DataLoader(dataset=data_set, batch_size=batch_size, collate_fn=SkipGramModelDataset.collate, shuffle=shuffle)
 
 
@@ -194,6 +194,7 @@ class SkipGramModel(nn.Module):
         # self.c_embedding = SkipGramMolEmbed(fp_len, edge_to_ix, edge_word_len, node_to_ix, node_word_len, radius)
         self.w_embedding = NNMolEmbed(fp_len, edge_to_ix, edge_word_len, node_to_ix, node_word_len, radius+1)
         self.init_emb()
+        self.loss = nn.BCELoss()
 
     def init_emb(self):
         initrange = 0.5 / self.w_embedding.fp_len
@@ -222,9 +223,31 @@ class SkipGramModel(nn.Module):
         return dist_mat / (w1 * w2).clamp(min=eps)
 
     # def forward(self, pos_context, neg_context, sizes, padding):
-    def forward(self, pos_context):
+    def forward(self, mols):
 
-        word_fps = self.w_embedding(*pos_context[0:-1])
+        fps = self.w_embedding(*mols[0:-1])
+        dists = self.remove_diag(self.euclidean_dist(fps, fps)).exp().pow(-1).clamp(max=1)
+        labels = self.remove_diag(mols[-1].float().matmul(mols[-1].float().t()))
+        return self.loss(dists, labels)
+
+        # pos_fps = self.w_embedding(*pos[0:-1])
+        # neg_fps = self.w_embedding(*neg[0:-1])
+        # pos_dists = self.remove_diag(self.euclidean_dist(pos_fps, pos_fps))
+        # mins = pos_dists.min(dim=-1)[0].unsqueeze(1)
+        # pos_labels = Variable(from_numpy(np.ones(mins.shape)).float())
+        # neg_dists = self.euclidean_dist(pos_fps, neg_fps)
+        # neg_labels = Variable(from_numpy(np.zeros(neg_dists.shape)).float())
+        # dists = torch.cat([mins, neg_dists], dim=-1).exp().pow(-1).clamp(max=1)
+        # labels = torch.cat([pos_labels, neg_labels], dim=-1)
+        # return self.loss(dists, labels.detach())
+
+
+        # pos_labels = pos_dists <= pos_dists.min(dim=-1)[0].unsqueeze(1)
+        # neg_dists = self.euclidean_dist(pos_fps, neg_fps)
+        # neg_labels = Variable(from_numpy(np.zeros(neg_dists.shape)).byte())
+        # dists = torch.cat([pos_dists, neg_dists], dim=-1).exp().pow(-1).clamp(max=1)
+        # labels = torch.cat([pos_labels, neg_labels], dim=-1)
+        # return self.loss(dists, labels.float().detach())
         # correct_labels = pos_context[-1].max(dim=-1)[1]
         # correct_label = sizes[0]
         # dists = []
@@ -240,10 +263,11 @@ class SkipGramModel(nn.Module):
         #     dists.append(dist.min(dim=-1)[0])
         # #
         # dists = torch.cat(dists, dim=-1).view(correct_labels.shape + (-1,))
-        dists = self.remove_diag(self.euclidean_dist(word_fps, word_fps))
-        correct_labels = dists.min(dim=-1)[1]
-        dists = F.softmin(dists, dim=-1).log()
-        return F.nll_loss(dists, correct_labels)
+        # dists = self.remove_diag(self.euclidean_dist(pos_fps, pos_fps))
+        # correct_labels = dists.min(dim=-1)[1]
+        # dists = torch.cat([dists, self.euclidean_dist(pos_fps, neg_fps)], dim=-1)
+        # dists = F.softmin(dists, dim=-1).log()
+        # return F.nll_loss(dists, correct_labels)
 
         # word_fps = self.w_embedding(*pos_context[0:-1])
         # neg_fps = self.w_embedding(torch.cat([neg[0] for neg in neg_context], dim=0),
@@ -314,41 +338,55 @@ class SkipGramModel(nn.Module):
 
 class SkipGramModelDataset(Dataset):
 
-    def __init__(self, data_list, label_data_dict):
+    def __init__(self, data_list, labels, label_data_dict):
         super(SkipGramModelDataset, self).__init__()
         self.data_list = data_list
+        self.labels = labels
         self.label_data_dict = label_data_dict
 
+    # def __len__(self):
+    #     return len(self.label_data_dict)
+
+    # def __getitem__(self, item):
+    #     label = item
+    #     context = []
+    #     for mol in self.label_data_dict[label]:
+    #         context.append(mol.to_collate())
+    #     mask = self.labels != item
+    #     neg = [mol.to_collate() for mol in np.random.choice(self.data_list[mask], size=len(context))]
+    #     # neg = [
+    #     #     [mol.to_collate() for mol in np.random.choice(mols, size=np.max((1, len(mols)/10)))]
+    #     #     for mols in self.label_data_dict.values()
+    #     # ]
+    #     # neg[item] = context
+    #     return OrderedDict([
+    #         ('context', context),
+    #         ('neg', neg)
+    #         # ('context_size', [item])
+    #     ])
+
     def __len__(self):
-        return len(self.label_data_dict)
+        return len(self.data_list)
 
     def __getitem__(self, item):
-        label = item
-        context = []
-        for mol in self.label_data_dict[label]:
-            context.append(mol.to_collate())
-        # neg = [
-        #     [mol.to_collate() for mol in np.random.choice(mols, size=np.max((1, len(mols)/10)))]
-        #     for mols in self.label_data_dict.values()
-        # ]
-        # neg[item] = context
-        return OrderedDict([
-            ('context', context)
-            # ('neg', neg),
-            # ('context_size', [item])
-        ])
+        return self.data_list[item].to_collate()
 
     def getall(self):
         return mol_collate_func_class([mol.to_collate() for mol in self.data_list])
 
     @staticmethod
     def collate(batch):
-        return mol_collate_func_class(batch[0]['context'])
-        # neg_sizes = [[datum[0].shape[0] for datum in minibatch] for minibatch in batch[0]['neg']]
-        # max_size = np.concatenate(neg_sizes).max()
-        # return (
-            # mol_collate_func_class(batch[0]['context']),
-            # [mol_collate_func_class(minibatch, max_size) for minibatch in batch[0]['neg']],
-            # np.array(batch[0]['context_size']),
-            # np.array([0])
-        # )
+        return mol_collate_func_class(batch)
+
+    # @staticmethod
+    # def collate(batch):
+    #     # return mol_collate_func_class(batch[0]['context'])
+    #     # neg_sizes = [[datum[0].shape[0] for datum in minibatch] for minibatch in batch[0]['neg']]
+    #     # max_size = np.concatenate(neg_sizes).max()
+    #     return (
+    #         mol_collate_func_class(batch[0]['context']),
+    #         mol_collate_func_class(batch[0]['neg'])
+    #         # [mol_collate_func_class(minibatch, max_size) for minibatch in batch[0]['neg']],
+    #         # np.array(batch[0]['context_size']),
+    #         # np.array([0])
+    #     )

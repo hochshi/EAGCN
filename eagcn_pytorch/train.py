@@ -89,7 +89,7 @@ if dataset == 'pubchem_chembl' or dataset == 'small_batch_test':
     n_sgc1_1, n_sgc1_2, n_sgc1_3, n_sgc1_4, n_sgc1_5 = 20, 20, 20, 20, 20
     n_sgc2_1, n_sgc2_2, n_sgc2_3, n_sgc2_4, n_sgc2_5 = 60, 20, 20, 20, 20
     # batch_size = 16384
-    batch_size = 1
+    batch_size = 256
     weight_decay = 0.0001  # L-2 Norm
     dropout = 0.3
     random_state = 11
@@ -343,7 +343,7 @@ def test_sgn_model(model, train_loader, test_loader):
     correct = [0] * len(top_ks)
     train_fps_cache = []
 
-    for test_mols in process_bar:
+    for test_mols, _ in process_bar:
         test_adj, test_afm, test_bft, test_labels = mol_to_input_label(test_mols)
         total += test_adj.shape[0]
         test_fps = model.w_embedding(test_adj, test_afm, test_bft)
@@ -355,7 +355,7 @@ def test_sgn_model(model, train_loader, test_loader):
             try:
                 train_fps, train_labels = train_fps_cache[i]
             except IndexError:
-                train_mols = train_loader.collate_fn([train_loader.dataset[i]])
+                train_mols, _ = train_loader.collate_fn([train_loader.dataset[i]])
                 train_adj, train_afm, train_bft, train_labels = mol_to_input_label(train_mols)
                 train_fps = model.w_embedding(train_adj, train_afm, train_bft)
                 train_fps_cache.append((train_fps, train_labels))
@@ -581,7 +581,7 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
     #
     # signal.signal(signal.SIGINT, signal_handler)
 
-    print(test_sgn_model(model, train_loader, validation_loader))
+    # print(test_sgn_model(model, train_loader, validation_loader))
 
     tot_loss = deque([0] * 4)
     process_bar0 = trange(num_epochs)
@@ -593,10 +593,10 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
         process_bar = tqdm(train_loader)
         process_bar.set_description("Loss: {}".format(tot_loss))
         # for pos_context, neg_context, sizes, padding in process_bar:
-        for pos_context in process_bar:
+        for mols in process_bar:
             optimizer.zero_grad()
-            model.zero_grad()
-            loss = model(mol_to_input_label(pos_context))
+            # model.zero_grad()
+            loss = model(mol_to_input_label(mols))
             tot_loss[-1] += loss.data[0]
             loss.backward()
             optimizer.step()

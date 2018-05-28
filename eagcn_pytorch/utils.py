@@ -735,15 +735,17 @@ class MolDatum():
 
 def construct_dataset(x_all, y_all, target):
     output = []
+    labels = []
     label_dict = defaultdict(list)
     for i in range(len(x_all)):
         mol_dat = MolDatum(x_all[i], y_all[i], target, i)
         output.append(mol_dat)
+        labels.append(np.argmax(y_all[i]))
         label_dict[np.argmax(y_all[i])].append(mol_dat)
     ord_label_dict = OrderedDict()
     for i in range(len(label_dict)):
         ord_label_dict[i] = label_dict[i]
-    return(output, ord_label_dict)
+    return(np.array(output), np.array(labels), ord_label_dict)
 
 class MolDataset(Dataset):
     """
