@@ -343,7 +343,7 @@ def test_sgn_model(model, train_loader, test_loader):
     train_fps_cache = []
 
     for test_mols in process_bar:
-        test_adj, test_afm, test_bft, test_labels = mol_to_input_label(test_mols[0])
+        test_adj, test_afm, test_bft, test_labels = mol_to_input_label(test_mols)
         total += test_adj.shape[0]
         test_fps = model.w_embedding(test_adj, test_afm, test_bft)
 
@@ -355,18 +355,18 @@ def test_sgn_model(model, train_loader, test_loader):
                 train_fps, train_labels = train_fps_cache[i]
             except IndexError:
                 train_mols = train_loader.collate_fn([train_loader.dataset[i]])
-                train_adj, train_afm, train_bft, train_labels = mol_to_input_label(train_mols[0])
+                train_adj, train_afm, train_bft, train_labels = mol_to_input_label(train_mols)
                 train_fps = model.w_embedding(train_adj, train_afm, train_bft)
                 train_fps_cache.append((train_fps, train_labels))
 
-            dist_mats.append(cosine_sim(test_fps, train_fps))
+            dist_mats.append(model.euclidean_dist(test_fps, train_fps))
             labels.append(train_labels)
 
         dist_mats = torch.cat(dist_mats, dim=1)
         train_labels = torch.cat(labels, dim=0)
-        top_sim = torch.topk(dist_mats, top_ks[-1] + 1, dim=1, largest=True)[0]
+        top_sim = torch.topk(dist_mats, top_ks[-1] + 1, dim=1, largest=False)[0]
         for j, topk in enumerate(top_ks):
-            nearestn = dist_mats > top_sim[:, topk].unsqueeze(1)
+            nearestn = dist_mats <= top_sim[:, topk-1].unsqueeze(1)
             nn_labels = torch.matmul(nearestn, train_labels)
             correct[j] += (torch.mul(nn_labels, test_labels) > 0).sum().data[0]
     return np.true_divide(correct, total).tolist()
