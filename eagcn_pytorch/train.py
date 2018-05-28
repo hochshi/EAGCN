@@ -439,8 +439,8 @@ def test_wrapper(model, train_loader, validation_loader):
 
     signal.signal(signal.SIGINT, signal_handler)
 
-    print("Testing Model:")
-    print(test_sgn_model(model, train_loader, validation_loader))
+    tqdm.write("Testing Model:")
+    tqdm.write(test_sgn_model(model, train_loader, validation_loader))
 
 def mol_to_input(mol):
     return (
@@ -581,7 +581,7 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
     #
     # signal.signal(signal.SIGINT, signal_handler)
 
-    # print(test_sgn_model(model, train_loader, validation_loader))
+    tqdm.write(test_sgn_model(model, train_loader, validation_loader))
 
     tot_loss = deque([0] * 4)
     process_bar0 = trange(num_epochs)
