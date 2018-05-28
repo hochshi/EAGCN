@@ -336,6 +336,7 @@ def cosine_sim(A, B, eps=1e-8):
 
 
 def test_sgn_model(model, train_loader, test_loader):
+    model.eval()
     process_bar = tqdm(test_loader)
     total = 0
     top_ks = [1, 5, 10, 30]
@@ -405,7 +406,7 @@ def test_sgn_model(model, train_loader, test_loader):
     #         nn_labels = Variable(from_numpy(nn_labels).byte())
     #         correct[i] += (nn_labels.mul(test_labels) > 0).sum().data[0]
 
-    return np.true_divide(correct, total).tolist()
+    # return np.true_divide(correct, total).tolist()
 
     # train_adj, train_afm, train_bft, train_labels = mol_to_input_label(train_loader.dataset.getall())
     # train_fps = model.w_embedding(train_adj, train_afm, train_bft)
@@ -585,6 +586,7 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
     tot_loss = deque([0] * 4)
     process_bar0 = trange(num_epochs)
     for epoch in process_bar0:
+        model.train()
         tot_loss.popleft()
         tot_loss.append(0)
         process_bar0.set_description("Loss: {}".format(tot_loss))
