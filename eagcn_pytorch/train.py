@@ -580,7 +580,7 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
     #
     # signal.signal(signal.SIGINT, signal_handler)
 
-    # print(test_sgn_model(model, train_loader, validation_loader))
+    print(test_sgn_model(model, train_loader, validation_loader))
 
     tot_loss = deque([0] * 4)
     process_bar0 = trange(num_epochs)
@@ -590,10 +590,11 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
         process_bar0.set_description("Loss: {}".format(tot_loss))
         process_bar = tqdm(train_loader)
         process_bar.set_description("Loss: {}".format(tot_loss))
-        for pos_context, neg_context, sizes, padding in process_bar:
+        # for pos_context, neg_context, sizes, padding in process_bar:
+        for pos_context in process_bar:
             optimizer.zero_grad()
             model.zero_grad()
-            loss = model(mol_to_input_label(pos_context), [mol_to_input_label(neg) for neg in neg_context], sizes, padding)
+            loss = model(mol_to_input_label(pos_context))
             tot_loss[-1] += loss.data[0]
             loss.backward()
             optimizer.step()

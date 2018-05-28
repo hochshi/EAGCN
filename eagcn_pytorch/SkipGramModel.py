@@ -221,7 +221,29 @@ class SkipGramModel(nn.Module):
         w2 = torch.norm(B, 2, 1).unsqueeze(0).expand(A.shape[0], -1)
         return dist_mat / (w1 * w2).clamp(min=eps)
 
-    def forward(self, pos_context, neg_context, sizes, padding):
+    # def forward(self, pos_context, neg_context, sizes, padding):
+    def forward(self, pos_context):
+
+        word_fps = self.w_embedding(*pos_context[0:-1])
+        # correct_labels = pos_context[-1].max(dim=-1)[1]
+        # correct_label = sizes[0]
+        # dists = []
+        # for i, neg in enumerate(neg_context):
+        #     neg_fps = self.w_embedding(*neg[0:-1])
+        #     if correct_label == i:
+        #         dist = self.remove_diag(self.euclidean_dist(word_fps, neg_fps))
+        #     else:
+        #         dist = self.euclidean_dist(word_fps, neg_fps)
+        #         #     # dists.append(dist)
+        #         #     # dist = self.euclidean_dist(word_fps, neg_fps)
+        #         #     # dist = self.cosine_sim(word_fps, neg_fps)
+        #     dists.append(dist.min(dim=-1)[0])
+        # #
+        # dists = torch.cat(dists, dim=-1).view(correct_labels.shape + (-1,))
+        dists = self.remove_diag(self.euclidean_dist(word_fps, word_fps))
+        correct_labels = dists.min(dim=-1)[1]
+        dists = F.softmin(dists, dim=-1).log()
+        return F.nll_loss(dists, correct_labels)
 
         # word_fps = self.w_embedding(*pos_context[0:-1])
         # neg_fps = self.w_embedding(torch.cat([neg[0] for neg in neg_context], dim=0),
@@ -238,24 +260,24 @@ class SkipGramModel(nn.Module):
 
         # word_self = (torch.cat([neg[-1].max(dim=-1)[1] for neg in neg_context]) == sizes[0]).view(-1, dists.shape[1]).expand(dists.shape[0], -1)
         #
-        word_fps = self.w_embedding(*pos_context[0:-1])
-        correct_labels = pos_context[-1].max(dim=-1)[1]
-        correct_label = sizes[0]
-        dists = []
-        for i, neg in enumerate(neg_context):
-            neg_fps = self.w_embedding(*neg[0:-1])
-            if correct_label == i:
-                dist = self.remove_diag(self.euclidean_dist(word_fps, neg_fps))
-            else:
-                dist = self.euclidean_dist(word_fps, neg_fps)
-        #     # dists.append(dist)
-        #     # dist = self.euclidean_dist(word_fps, neg_fps)
-        #     # dist = self.cosine_sim(word_fps, neg_fps)
-            dists.append(dist.min(dim=-1)[0])
-        #
-        dists = torch.cat(dists, dim=-1).view(correct_labels.shape + (-1,))
-        dists = F.softmin(dists, dim=-1).log()
-        return F.nll_loss(dists, correct_labels)
+        # word_fps = self.w_embedding(*pos_context[0:-1])
+        # correct_labels = pos_context[-1].max(dim=-1)[1]
+        # correct_label = sizes[0]
+        # dists = []
+        # for i, neg in enumerate(neg_context):
+        #     neg_fps = self.w_embedding(*neg[0:-1])
+        #     if correct_label == i:
+        #         dist = self.remove_diag(self.euclidean_dist(word_fps, neg_fps))
+        #     else:
+        #         dist = self.euclidean_dist(word_fps, neg_fps)
+        # #     # dists.append(dist)
+        # #     # dist = self.euclidean_dist(word_fps, neg_fps)
+        # #     # dist = self.cosine_sim(word_fps, neg_fps)
+        #     dists.append(dist.min(dim=-1)[0])
+        # #
+        # dists = torch.cat(dists, dim=-1).view(correct_labels.shape + (-1,))
+        # dists = F.softmin(dists, dim=-1).log()
+        # return F.nll_loss(dists, correct_labels)
 
         # pos_scores =
         # neg_scores = self.euclidean_dist(word_fps, neg_fps)
@@ -305,15 +327,15 @@ class SkipGramModelDataset(Dataset):
         context = []
         for mol in self.label_data_dict[label]:
             context.append(mol.to_collate())
-        neg = [
-            [mol.to_collate() for mol in np.random.choice(mols, size=np.max((1, len(mols)/10)))]
-            for mols in self.label_data_dict.values()
-        ]
-        neg[item] = context
+        # neg = [
+        #     [mol.to_collate() for mol in np.random.choice(mols, size=np.max((1, len(mols)/10)))]
+        #     for mols in self.label_data_dict.values()
+        # ]
+        # neg[item] = context
         return OrderedDict([
-            ('context', context),
-            ('neg', neg),
-            ('context_size', [item])
+            ('context', context)
+            # ('neg', neg),
+            # ('context_size', [item])
         ])
 
     def getall(self):
@@ -321,11 +343,12 @@ class SkipGramModelDataset(Dataset):
 
     @staticmethod
     def collate(batch):
-        neg_sizes = [[datum[0].shape[0] for datum in minibatch] for minibatch in batch[0]['neg']]
-        max_size = np.concatenate(neg_sizes).max()
-        return (
-            mol_collate_func_class(batch[0]['context']),
-            [mol_collate_func_class(minibatch, max_size) for minibatch in batch[0]['neg']],
-            np.array(batch[0]['context_size']),
-            np.array([0])
-        )
+        return mol_collate_func_class(batch[0]['context'])
+        # neg_sizes = [[datum[0].shape[0] for datum in minibatch] for minibatch in batch[0]['neg']]
+        # max_size = np.concatenate(neg_sizes).max()
+        # return (
+            # mol_collate_func_class(batch[0]['context']),
+            # [mol_collate_func_class(minibatch, max_size) for minibatch in batch[0]['neg']],
+            # np.array(batch[0]['context_size']),
+            # np.array([0])
+        # )
