@@ -343,7 +343,7 @@ def test_sgn_model(model, train_loader, test_loader):
     correct = [0] * len(top_ks)
     train_fps_cache = []
 
-    for test_mols, _ in process_bar:
+    for test_mols in process_bar:
         test_adj, test_afm, test_bft, test_labels = mol_to_input_label(test_mols)
         total += test_adj.shape[0]
         test_fps = model.w_embedding(test_adj, test_afm, test_bft)
@@ -355,7 +355,7 @@ def test_sgn_model(model, train_loader, test_loader):
             try:
                 train_fps, train_labels = train_fps_cache[i]
             except IndexError:
-                train_mols, _ = train_loader.collate_fn([train_loader.dataset[i]])
+                train_mols = train_loader.collate_fn([train_loader.dataset[i]])
                 train_adj, train_afm, train_bft, train_labels = mol_to_input_label(train_mols)
                 train_fps = model.w_embedding(train_adj, train_afm, train_bft)
                 train_fps_cache.append((train_fps, train_labels))
@@ -581,7 +581,7 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
     #
     # signal.signal(signal.SIGINT, signal_handler)
 
-    # print(test_sgn_model(model, train_loader, validation_loader))
+    print(test_sgn_model(model, train_loader, validation_loader))
 
     tot_loss = deque([0] * 4)
     process_bar0 = trange(num_epochs)
