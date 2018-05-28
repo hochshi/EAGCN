@@ -607,6 +607,7 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
         if (0 == (epoch-9) % 10 ):
             test_wrapper(model, train_loader, validation_loader)
     test_wrapper(model, train_loader, validation_loader)
+    test_wrapper(model, train_loader, test_loader)
 """
         if False:
             if precision_recall:
