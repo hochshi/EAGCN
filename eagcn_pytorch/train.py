@@ -89,7 +89,7 @@ if dataset == 'pubchem_chembl' or dataset == 'small_batch_test':
     n_sgc1_1, n_sgc1_2, n_sgc1_3, n_sgc1_4, n_sgc1_5 = 20, 20, 20, 20, 20
     n_sgc2_1, n_sgc2_2, n_sgc2_3, n_sgc2_4, n_sgc2_5 = 60, 20, 20, 20, 20
     # batch_size = 16384
-    batch_size = 256
+    batch_size = 220
     weight_decay = 0.0001  # L-2 Norm
     dropout = 0.3
     random_state = 11
@@ -512,7 +512,7 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
 
     # model = SimpleMolEmbed(10, edge_to_ix, edge_word_len, node_to_ix, node_word_len, 2, len(tasks))
 
-    model = SkipGramModel(10, edge_to_ix, edge_word_len, node_to_ix, node_word_len, 2)
+    model = SkipGramModel(10, edge_to_ix, edge_word_len, node_to_ix, node_word_len, 2, batch_size)
 
     print("model has {} parameters".format(count_parameters(model)))
     if use_cuda:
@@ -581,7 +581,7 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
     #
     # signal.signal(signal.SIGINT, signal_handler)
 
-    print(test_sgn_model(model, train_loader, validation_loader))
+    # print(test_sgn_model(model, train_loader, validation_loader))
 
     tot_loss = deque([0] * 4)
     process_bar0 = trange(num_epochs)

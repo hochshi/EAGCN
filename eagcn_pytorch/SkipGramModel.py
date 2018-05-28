@@ -188,13 +188,14 @@ class SkipGramModel(nn.Module):
         c_embedding: Embedding for context words
     """
 
-    def __init__(self, fp_len, edge_to_ix, edge_word_len, node_to_ix, node_word_len, radius):
+    def __init__(self, fp_len, edge_to_ix, edge_word_len, node_to_ix, node_word_len, radius, batch_size):
         super(SkipGramModel, self).__init__()
         # self.w_embedding = SkipGramMolEmbed(fp_len, edge_to_ix, edge_word_len, node_to_ix, node_word_len, radius)
         # self.c_embedding = SkipGramMolEmbed(fp_len, edge_to_ix, edge_word_len, node_to_ix, node_word_len, radius)
         self.w_embedding = NNMolEmbed(fp_len, edge_to_ix, edge_word_len, node_to_ix, node_word_len, radius+1)
         self.init_emb()
-        self.loss = nn.BCELoss()
+        self.loss = nn.BCEWithLogitsLoss()
+        self.bn = nn.BatchNorm1d(batch_size-1, affine=False)
 
     def init_emb(self):
         initrange = 0.5 / self.w_embedding.fp_len
@@ -226,8 +227,11 @@ class SkipGramModel(nn.Module):
     def forward(self, mols):
 
         fps = self.w_embedding(*mols[0:-1])
-        dists = self.remove_diag(self.euclidean_dist(fps, fps)).exp().pow(-1).clamp(max=1)
-        labels = self.remove_diag(mols[-1].float().matmul(mols[-1].float().t()))
+        # dists = self.remove_diag(self.euclidean_dist(fps, fps)).exp().pow(-1).clamp(max=1)
+        dists = self.bn(self.remove_diag(self.euclidean_dist(fps, fps)))
+        # dists = self.bn(dists)
+        labels = 1 - self.remove_diag(mols[-1].float().matmul(mols[-1].float().t()))
+        # return (dists.mul(labels).neg() + dists.mul(1-labels).exp().add(-1).log() - dists.mul(1-labels)).neg().mean()
         return self.loss(dists, labels)
 
         # pos_fps = self.w_embedding(*pos[0:-1])
