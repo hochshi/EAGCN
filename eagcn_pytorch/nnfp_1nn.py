@@ -68,10 +68,10 @@ test_fps, test_fp_labels = np.concatenate(data['test_fps'], axis=0).reshape(-1, 
 test_labels = np.zeros((len(test_fp_labels), max(train_fp_labels)+1), dtype=np.int8)
 test_labels[range(len(test_fp_labels)), test_fp_labels] = 1
 
-train_val = cdist(val_fps, train_fps, metric='cosine')
+train_val = cdist(val_fps, train_fps, metric='euclidean')
 print(test_model(train_val, train_labels, val_labels))
 del train_val
-train_test = cdist(test_fps, train_fps, metric='cosine')
+train_test = cdist(test_fps, train_fps, metric='euclidean')
 print(test_model(train_test, train_labels, test_labels))
 del train_test
 
