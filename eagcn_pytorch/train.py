@@ -1,32 +1,16 @@
 from __future__ import division
 from __future__ import print_function
 
-import time
-import argparse
-import numpy as np
-import math
-
-import torch
-import torch.nn.functional as F
-import torch.optim as optim
-from torch.autograd import Variable
-from utils import *
 from models import *
-from torch.utils.data import Dataset
+from SkipGramModel import *
 
 from sklearn import metrics
-from sklearn.utils import shuffle, resample
 from sklearn.model_selection import train_test_split, KFold
-import os
 
-import matplotlib.pyplot as plt
 from time import gmtime, strftime
 
-from SkipGramModel import *
-from scipy.spatial.distance import cdist
 from tqdm import tqdm
 from tqdm import trange
-from collections import deque
 
 # Training settings
 dataset = 'small_batch_test'  # 'tox21', 'hiv', 'pubchem_chembl', 'small_batch_test'
@@ -118,12 +102,6 @@ early_stop_diff = 0.11
 experiment_date = strftime("%b_%d_%H:%M", gmtime()) + 'N'
 print(experiment_date)
 torch.manual_seed(random_state)
-# use_cuda = torch.cuda.is_available()
-# FloatTensor = torch.cuda.FloatTensor if use_cuda else torch.FloatTensor
-# LongTensor = torch.cuda.LongTensor if use_cuda else torch.LongTensor
-# IntTensor = torch.cuda.IntTensor if use_cuda else torch.IntTensor
-# DoubleTensor = torch.cuda.DoubleTensor if use_cuda else torch.DoubleTensor
-
 calcpos, precision_recall = False, False
 
 # targets for  tox21
@@ -138,6 +116,7 @@ if dataset == 'pubchem_chembl' or dataset == 'small_batch_test':
     all_tasks = 'AADAT,ABAT,ABCB1A,ABCB1B,ABCC8,ABCC9,ABHD6,ACACA,ACE2,ACKR3,ACLY,ACOX1,ACP1,ACR,ADA,ADAM10,ADAMTS4,ADCY1,ADCY5,ADM,ADRA1B,ADRA2B,ADRBK1,AGER,AGPAT2,AGTR1A,AHCY,AKP3,AKR1B10,AKR1C1,AKT2,AKT3,ALB,ALDH2,ALDH3A1,ALKBH3,ALPI,ALPPL2,AMD1,AMPD2,AMPD3,ANPEP,AOC3,APAF1,APEX1,APLNR,APOB,ASAH1,ASIC3,ATG4B,ATR,AURKC,AXL,BACE2,BAD,BAP1,BCL2A1,BCL2A1A,BIRC3,BIRC5,BMP4,BRD2,BRD3,BTK,C1R,C1S,C3AR1,CA13,CA14,CA4,CA5A,CA7,CACNA1C,CACNA1I,CACNA1S,CAMK2D,CAPN2,CAR13,CARM1,CASP2,CASP6,CASP8,CBX7,CCL2,CCL5,CD22,CDC25A,CDC25C,CDK5,CDK8,CDK9,CENPE,CES1,CES2,CHAT,CHKA,CHRNA10,CHRNA3,CHRNA6,CHUK,COMT,CPA1,CPB1,CPB2,CREBBP,CSGALNACT1,CSK,CSNK1A1,CSNK1D,CSNK1G1,CSNK1G2,CSNK2A1,CSNK2A2,CTBP1,CTNNB1,CTRB1,CTRC,CTSA,CTSC,CTSE,CTSF,CTSG,CTSV,CX3CR1,CXCL8,CXCR1,CYP1A1,CYP1B1,CYP24A1,CYP26A1,CYP2A6,CYP2J2,CYP51A1,CYSLTR1,DAGLA,DAO,DAPK3,DCK,DDIT3,DDR1,DDR2,DLG4,DNM1,DNMT1,DOT1L,DPEP1,DPP8,DPP9,DRD5,DUSP3,DUT,DYRK1B,DYRK2,EBP,EEF2K,EGLN2,EGLN3,EIF2AK1,EIF2AK2,EIF2AK3,EIF4A1,EIF4E,ELOVL6,ENPEP,EP300,EPAS1,EPHB3,EPHX1,ERAP1,ERBB4,ERN1,ESRRA,EYA2,EZH2,F11,F12,F13A1,F2RL1,F3,F9,FABP3,FABP4,FAP,FAS,FCER2,FFAR2,FFAR4,FGFR2,FLT4,FPGS,FPR2,FSHR,FUCA1,FYN,G6PD,GABRA1,GABRA5,GALK1,GALR2,GALR3,GAPDH,GART,GBA2,GCKR,GGPS1,GHRHR,GHRL,GLI1,GLO1,GLRA1,GPR142,GPR17,GPR183,GRIA1,GRIA2,GRIA4,GRIK2,GRIN2C,GRIN2D,GRK5,GRM3,GRM7,GRM8,GRPR,GSG2,GSR,GSTM1,GSTP1,GUSB,GYS1,GZMB,HAO2,HCAR3,HCK,HCN1,HDAC2,HDAC3,HDAC5,HKDC1,HLA-A,HLA-DRB1,HMOX1,HMOX2,HNF4A,HPGDS,HPRT1,HRAS,HRH2,HSD11B2,HSD17B7,HSPA5,HTR1F,IARS,ICAM1,IDE,IGFBP3,IKBKE,IL5,IMPDH1,INSR,IRAK4,ITGA2B,ITGAV,ITPR1,JMJD7-PLA2G4B,JUN,KARS,KAT2B,KCNJ1,KCNJ11,KCNJ2,KCNK3,KCNN3,KCNN4,KCNQ1,KDM1A,KDM4C,KHK,KLF5,KLK3,KLK5,KLK7,KLKB1,KMO,KPNA2,L3MBTL3,LAP3,LARGE,LDHA,LDLR,LGALS3,LGMN,LHCGR,LIMK1,LIMK2,LIPG,LNPEP,LPAR1,LPAR2,LPAR3,LYN,MAG,MAP2K5,MAP3K11,MAP3K14,MAP3K5,MAP3K7,MAP3K9,MAP4K2,MAP4K4,MAPK11,MAPK13,MAPK7,MAPK9,MAPKAPK5,MARS,MBNL1,MBTPS1,MC3R,MCHR2,MCOLN3,MEN1,METAP1,MGAM,MGAT2,MGMT,MIF,MITF,MKNK1,MLLT3,MMP11,MMP14,MMP7,MOGAT2,MPI,MPO,MRGPRX1,MTAP,MTTP,MYLK,NAAA,NAT1,NAT2,NCEH1,NCF1,NCOA3,NEK2,NFKB1,NIACR1,NISCH,NLRP3,NMBR,NMT1,NOD1,NOD2,NOS3,NOX1,NOX4,NPC1L1,NPFFR1,NPFFR2,NQO1,NR0B1,NR1D1,NR1I2,NR4A1,NR5A2,NRP1,NT5E,NTRK3,NTSR2,OXER1,OXGR1,P2RX1,P2RX2,P2RX4,P2RY14,P2RY4,P2RY6,P4HB,PABPC1,PAK1,PAK4,PAM,PARP2,PCK1,PCNA,PCSK6,PDE11A,PDE2A,PDE3A,PDE3B,PDE6D,PDE8B,PDE9A,PDF,PDGFRA,PFDN6,PGA5,PGC,PGGT1B,PHOSPHO1,PI4KA,PI4KB,PIM3,PIP4K2A,PKLR,PLA2G10,PLA2G1B,PLAT,PLAUR,PLD1,PLD2,PLEC,PLG,PLIN1,PLK2,PLK3,PLK4,PNMT,POLA1,POLK,PORCN,PPIA,PPOX,PPP1CA,PPP5C,PRKACA,PRKCB,PRKCE,PRKCG,PRKCH,PRKCZ,PRKD1,PRKX,PRMT3,PRNP,PROC,PROKR1,PRSS8,PSEN1,PSMB1,PSMB2,PSMB8,PSMD14,PTBP1,PTGDS,PTGER2,PTGES2,PTGFR,PTGIR,PTH1R,PTK2B,PTK6,PTPN11,PTPN2,PTPN22,PTPRB,PTPRC,PYGM,QRFPR,RAC1,RAD51,RAD54L,RAPGEF4,RARA,RARB,RARG,RASGRP3,RBP4,RCE1,RELA,RET,RGS19,RHOA,RIPK1,RORA,ROS1,RPS6KA5,RPS6KB1,RXRB,RXRG,S100A4,S1PR2,S1PR3,S1PR5,SCN10A,SCN2A,SCN4A,SCN5A,SCNN1A,SELE,SELP,SENP1,SENP6,SENP7,SENP8,SFRP1,SGK1,SHBG,SI,SIRT2,SLC10A1,SLC11A2,SLC12A5,SLC16A1,SLC1A2,SLC1A3,SLC22A12,SLC27A1,SLC27A4,SLC5A1,SLC5A4,SLC6A5,SLCO1B1,SLCO1B3,SMG1,SMN2,SMPD1,SOAT2,SORD,SORT1,SPHK2,SQLE,SSTR2,SSTR4,STAT1,STAT6,STK17A,STK33,SUCNR1,SUMO1,TBK1,TDP2,TGFBR2,THPO,THRA,TK1,TK2,TKT,TLR2,TLR4,TLR8,TLR9,TMPRSS11D,TNF,TNFRSF1A,TNIK,TNK2,TOP2A,TPH1,TPP2,TRHR,TRPC6,TRPV4,TSG101,TTK,TTR,TUBB1,TYK2,TYMP,TYR,TYRO3,UBE2N,UGCG,UGT2B7,UPP1,USP1,UTS2,VCAM1,VIPR1,WDR5,WHSC1,WNT3,WNT3A,XBP1,XDH,YARS,YES1,ZAP70'.split(',')
     calcpos = True
 
+
 def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
@@ -148,6 +127,7 @@ def embed_afm(afm, node_to_ix, node_word_len):
     nodes = np.array([[node_to_ix[key]] for key in nodes])
     remaining_node_attributes = afm[:, node_word_len:]
     return np.concatenate((nodes, remaining_node_attributes), axis=1)
+
 
 def embed_bonds(adj, orderAtt, aromAtt, conjAtt, ringAtt, edge_to_ix, edge_word_len):
     nz = (0 != adj.reshape(-1))
@@ -166,7 +146,6 @@ def embed_data(x_all, edge_vocab, node_vocab):
 
     node_to_ix = {node: i for i, node in enumerate(node_vocab)}
     node_word_len = len(list(node_to_ix.keys())[0])
-
 
     afm_pos, adj_pos, bfm_pos, orderAtts_pos, aromAtts_pos, conjAtts_pos, ringAtts_pos = 0, 1, 2, 3, 4, 5, 6
 
@@ -202,7 +181,6 @@ def split_data(x_all, y_all, target, mol_to_graph_transform, random_state=random
 
     if mol_to_graph_transform is None:
         test_loader = loader_func(x_test, y_test, target, batch_size)
-        # test_loader = construct_sgm_loader(x_test, y_test, target, batch_size)
     else:
         test_loader = construct_pubchem_loader(x_test, y_test, batch_size, mol_to_graph_transform)
     del x_test, y_test
@@ -372,63 +350,6 @@ def test_sgn_model(model, train_loader, test_loader):
             correct[j] += (torch.mul(nn_labels, test_labels) > 0).sum().data[0]
     return np.true_divide(correct, total).tolist()
 
-    # for test_mols in process_bar:
-    #     test_adj, test_afm, test_bft, test_labels = mol_to_input_label(test_mols[0])
-    #     total += test_adj.shape[0]
-    #     test_fps = model.w_embedding(test_adj, test_afm, test_bft)
-    #
-    #     dist_mat = Variable(from_numpy(np.zeros((test_fps.shape[0], top_ks[-1]+1))-2).float())
-    #     labels = Variable(from_numpy(np.zeros((test_fps.shape[0], top_ks[-1]+1))-2).long())
-    #
-    #     for train_mols in train_loader:
-    #         train_adj, train_afm, train_bft, train_labels = mol_to_input_label(train_mols[0])
-    #         train_fps = model.w_embedding(train_adj, train_afm, train_bft)
-    #
-    #         next_dist_mat = cosine_sim(test_fps, train_fps)
-    #         train_labels = train_labels[0].max(dim=0)[1].unsqueeze(0).expand(next_dist_mat.shape)
-    #         dist_mat, top_indices = torch.topk(torch.cat((dist_mat, next_dist_mat), dim=1), top_ks[-1] + 1, dim=1, largest=True)
-    #         labels = torch.cat((labels, train_labels), dim=1)
-    #         labels = torch.cat([labels[i][top_indices[i]].unsqueeze(0) for i in range(top_indices.shape[0])], dim=0)
-    #
-    #     labels = to_numpy(labels.data) + np.arange(labels.shape[0]).reshape(labels.shape[0], -1) * test_labels.shape[1]
-    #     # (labels + Variable(torch.arange(labels.shape[0]).long().unsqueeze(1) * test_labels.shape[1])).data)
-    #
-    #     # nn_labels = np.zeros(test_labels.shape, dtype=np.uint8)
-    #     # nn_labels.reshape(-1)[np.unique(to_numpy(labels.view(-1).data))] = 1
-    #     # nn_labels = Variable(from_numpy(nn_labels).byte())
-    #     # for i in range(labels.shape[0]):
-    #     #     nn_labels[i][labels[i]] = 1
-    #
-    #     for i, topk in enumerate(top_ks):
-    #         sub_labels = labels[:,0:topk]
-    #         nn_labels = np.zeros(test_labels.shape, dtype=np.uint8)
-    #         nn_labels.reshape(-1)[np.unique(sub_labels.reshape(-1))] = 1
-    #         nn_labels = Variable(from_numpy(nn_labels).byte())
-    #         correct[i] += (nn_labels.mul(test_labels) > 0).sum().data[0]
-
-    # return np.true_divide(correct, total).tolist()
-
-    # train_adj, train_afm, train_bft, train_labels = mol_to_input_label(train_loader.dataset.getall())
-    # train_fps = model.w_embedding(train_adj, train_afm, train_bft)
-    # del train_adj, train_afm, train_bft
-    # test_adj, test_afm, test_bft, test_labels = mol_to_input_label(test_loader.dataset.getall())
-    # test_fps = model.w_embedding(test_adj, test_afm, test_bft)
-    # del test_adj, test_afm, test_bft
-    #
-    # dist_mat = cosine_sim(test_fps, train_fps)
-    # correct = []
-    # total = test_fps.shape[0]
-    # top_ks = [1, 5, 10, 30]
-    # for i in range(test_fps.shape[0]):
-    #     dist_mat = cdist(test_fps[i,:], train_fps, metric='cosine')
-    # top_sim = torch.topk(dist_mat, top_ks[-1]+1, dim=1, largest=True)[0]
-
-    # for j, topk in enumerate(top_ks):
-    #     nearestn = dist_mat > top_sim[:, topk].unsqueeze(1)
-    #     nn_labels = torch.matmul(nearestn, train_labels)
-    #     correct.append((torch.mul(nn_labels, test_labels) > 0).sum().data[0])
-    # return np.true_divide(correct, total).tolist()
-
 
 def test_wrapper(model, train_loader, validation_loader):
     import signal
@@ -440,7 +361,8 @@ def test_wrapper(model, train_loader, validation_loader):
     signal.signal(signal.SIGINT, signal_handler)
 
     tqdm.write("Testing Model:")
-    tqdm.write(test_sgn_model(model, train_loader, validation_loader))
+    tqdm.write('Results: {}'.format(', '.join(map(str, test_sgn_model(model, train_loader, validation_loader)))))
+
 
 def mol_to_input(mol):
     return (
@@ -458,12 +380,12 @@ def mol_to_input_label(mol):
         Variable(mol[labels_pos])
     )
 
+
 def simplify_input(x_all):
     return [[
         x[1].astype(np.uint8),
         x[0][:,0].astype(np.uint8),
         x[2].astype(np.uint8)
-        # x[2][x[1].astype(np.bool)].astype(np.uint8)
     ] for x in x_all]
 
 
@@ -483,45 +405,14 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
 
     x_all, edge_to_ix, edge_word_len, node_to_ix, node_word_len = embed_data(x_all, edge_vocab, node_vocab)
 
-    # if 'hiv' == dataset:
-    #     model = Shi_GCN(n_bfeat=n_bfeat, n_afeat=n_afeat,
-    #                     n_sgc1_1=n_sgc1_1, n_sgc1_2=n_sgc1_2, n_sgc1_3=n_sgc1_3, n_sgc1_4=n_sgc1_4,
-    #                     n_sgc1_5=n_sgc1_5,
-    #                     n_sgc2_1=n_sgc2_1, n_sgc2_2=n_sgc2_2, n_sgc2_3=n_sgc2_3, n_sgc2_4=n_sgc2_4,
-    #                     n_sgc2_5=n_sgc2_5,
-    #                     n_den1=n_den1, n_den2=n_den2,
-    #                     nclass=len(tasks)+1, dropout=dropout,
-    #                     edge_to_ix=edge_to_ix, edge_word_len=edge_word_len, node_to_ix=node_to_ix,
-    #                     node_word_len=node_word_len)
-    # else:
-    #     model = Shi_GCN(n_bfeat=n_bfeat, n_afeat=n_afeat,
-    #                     n_sgc1_1=n_sgc1_1, n_sgc1_2=n_sgc1_2, n_sgc1_3=n_sgc1_3, n_sgc1_4=n_sgc1_4,
-    #                     n_sgc1_5=n_sgc1_5,
-    #                     n_sgc2_1=n_sgc2_1, n_sgc2_2=n_sgc2_2, n_sgc2_3=n_sgc2_3, n_sgc2_4=n_sgc2_4,
-    #                     n_sgc2_5=n_sgc2_5,
-    #                     n_den1=n_den1, n_den2=n_den2,
-    #                     nclass=len(tasks), dropout=dropout,
-    #                     edge_to_ix=edge_to_ix, edge_word_len=edge_word_len, node_to_ix=node_to_ix,
-    #                     node_word_len=node_word_len, use_att=False)
-
-    # model = MolGraph(n_afeat, edge_to_ix, edge_word_len, node_to_ix, node_word_len)
-    # if 'hiv' == dataset:
-    #     model = MolGCN(n_afeat, edge_to_ix, edge_word_len, node_to_ix, node_word_len, len(tasks)+1)
-    # else:
-    #     model = MolGCN(n_afeat, edge_to_ix, edge_word_len, node_to_ix, node_word_len, len(tasks))
-
-    # model = SimpleMolEmbed(10, edge_to_ix, edge_word_len, node_to_ix, node_word_len, 2, len(tasks))
-
     model = SkipGramModel(10, edge_to_ix, edge_word_len, node_to_ix, node_word_len, 2, batch_size)
 
     print("model has {} parameters".format(count_parameters(model)))
     if use_cuda:
-        # lgr.info("Using the GPU")
         model.cuda()
 
     model.apply(weights_init)
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
-    # optimizer = torch.optim.SparseAdam(model.parameters(), lr=learning_rate)
 
     validation_acc_history = []
     acc_history = np.empty([4, 2, num_epochs])
@@ -533,79 +424,26 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
                                                                                      loader_func=construct_sgm_loader)
     del x_all, y_all, target
 
-    # import signal
-    # import sys
-    # def signal_handler(signal, frame):
-    #     print('You pressed Ctrl+C!')
-    #     test_wrapper(model, train_loader, validation_loader)
-    #     sys.exit(0)
-    #     if precision_recall:
-    #         print("Calculating train precision and recall...")
-    #         tpre, trec, tspe, tacc = test_model(test_loader, model, tasks)
-    #         print(
-    #             'Test Precision: {}, Recall: {}, Specificity: {}, Accuracy: {}'.format(tpre, trec, tspe, tacc)
-    #         )
-    #     elif calcpos:
-    #         print("Calculating Top-K position...")
-    #         pos_data, fps, fp_labels = test_model(test_loader, model, tasks, reportFps=True)
-    #         tpos_0, tpos_5, tpos_10, tpos_30 = pos_data
-    #         print(
-    #             'Test: 1: {}, 5: {}, 10: {}, 30: {}'.format(
-    #                 tpos_0, tpos_5, tpos_10, tpos_30
-    #             ))
-    #         torch.save(model.state_dict(), '{}.pkl'.format(file_name))
-    #         torch.save(model, '{}.pt'.format(file_name))
-    #
-    #         if write_file:
-    #             with open(file_name, 'a') as fp:
-    #                 fp.write('\n Test: 1: {}, 5: {}, 10: {}, 30: {}'.format(
-    #                     tpos_0, tpos_5, tpos_10, tpos_30
-    #                 ))
-    #             np.savez('{}_outputs'.format(file_name), fps=fps, fp_labels=fp_labels)
-    #             np.savez('{}_acc_history'.format(file_name), acc_history=acc_history)
-    #         # return (tpos_0, tpos_5, tpos_10, tpos_30)
-    #     else:
-    #         test_auc_sep, test_auc_tot = test_model(test_loader, model, tasks)
-    #         torch.save(model.state_dict(), '{}.pkl'.format(file_name))
-    #         torch.save(model, '{}.pt'.format(file_name))
-    #
-    #         print('AUC of the model on the test set for single task: {}\n'
-    #               'AUC of the model on the test set for all tasks: {}'.format(test_auc_sep, test_auc_tot))
-    #         if write_file:
-    #             with open(file_name, 'a') as fp:
-    #                 fp.write('AUC of the model on the test set for single task: {}\n'
-    #                          'AUC of the model on the test set for all tasks: {}'.format(test_auc_sep, test_auc_tot))
-    #
-    #         # return (test_auc_tot)
-    #     sys.exit(0)
-    #
-    # signal.signal(signal.SIGINT, signal_handler)
-
-    tqdm.write(test_sgn_model(model, train_loader, validation_loader))
-
-    tot_loss = deque([0] * 4)
+    loss_hist = []
     process_bar0 = trange(num_epochs)
+    test_wrapper(model, train_loader, validation_loader)
     for epoch in process_bar0:
+        tot_loss = 0
         model.train()
-        tot_loss.popleft()
-        tot_loss.append(0)
-        process_bar0.set_description("Loss: {}".format(tot_loss))
         process_bar = tqdm(train_loader)
-        process_bar.set_description("Loss: {}".format(tot_loss))
-        # for pos_context, neg_context, sizes, padding in process_bar:
         for mols in process_bar:
             optimizer.zero_grad()
-            # model.zero_grad()
             loss = model(mol_to_input_label(mols))
-            tot_loss[-1] += loss.data[0]
+            tot_loss += loss.data[0]
             loss.backward()
             optimizer.step()
-            process_bar.set_description("Loss: {}".format(tot_loss[-1]))
-            process_bar0.set_description("Loss: {}".format(tot_loss))
+        loss_hist.append(tot_loss)
+        tqdm.write('Epoch: {}, Loss: {}'.format(epoch, tot_loss))
 
         # report performance
-        if (0 == (epoch-9) % 10 ):
+        if 0 == epoch % 10:
             test_wrapper(model, train_loader, validation_loader)
+    tqdm.write('Loss history: {}'.format(', '.join(map(str, loss_hist))))
     test_wrapper(model, train_loader, validation_loader)
     test_wrapper(model, train_loader, test_loader)
 """
