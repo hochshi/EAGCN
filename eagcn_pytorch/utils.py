@@ -970,7 +970,7 @@ def set_weight(y_all):
 
 def weights_init(m):
     pass
-    # classname = m.__class__.__name__
+    classname = m.__class__.__name__
     # if classname.find('Conv') != -1:
     #     # m.weight.data.fill_(1.0)
     #     m.weight.data.normal_(0.0, 0.02)
@@ -986,11 +986,11 @@ def weights_init(m):
     #     # m.weight.data.fill_(1.0)
     #     m.weight.data.normal_(0.0, 0.02)
     #     return
-    # if classname.find('Linear') != -1:
-    #     # m.weight.data.fill_(1.0)
+    if classname.find('Linear') != -1:
+        m.weight.data.fill_(1.0)
     #     m.weight.data.normal_(0.0, 0.02)
-    #     m.bias.data.fill_(0)
-    #     return
+        m.bias.data.fill_(0)
+        return
 
 def rsquared(x, y):
     """ Return R^2 where x and y are array-like."""

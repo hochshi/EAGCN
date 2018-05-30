@@ -12,11 +12,15 @@ from time import gmtime, strftime
 from tqdm import tqdm
 from tqdm import trange
 
+from rdkit import DataStructs
+from EcfpModel import *
+
 # Training settings
 dataset = 'small_batch_test'  # 'tox21', 'hiv', 'pubchem_chembl', 'small_batch_test'
 EAGCN_structure = 'concate'  # 'concate', 'weighted_ave'
 write_file = True
 n_den1, n_den2 = 64, 32
+nBits = 512
 
 adj_pos, afm_pos, btf_pos, labels_pos = range(4)
 
@@ -321,10 +325,10 @@ def test_sgn_model(model, train_loader, test_loader):
     correct = [0] * len(top_ks)
     train_fps_cache = []
 
-    for test_mols in process_bar:
-        test_adj, test_afm, test_bft, test_labels = mol_to_input_label(test_mols)
-        total += test_adj.shape[0]
-        test_fps = model.w_embedding(test_adj, test_afm, test_bft)
+    for test_ecfp_input in process_bar:
+        test_fps, test_labels = prep_input(*test_ecfp_input)
+        total += test_fps.shape[0]
+        test_fps = model.fp_output(test_fps)
 
         dist_mats = []
         labels = []
@@ -333,12 +337,12 @@ def test_sgn_model(model, train_loader, test_loader):
             try:
                 train_fps, train_labels = train_fps_cache[i]
             except IndexError:
-                train_mols = train_loader.collate_fn([train_loader.dataset[i]])
-                train_adj, train_afm, train_bft, train_labels = mol_to_input_label(train_mols)
-                train_fps = model.w_embedding(train_adj, train_afm, train_bft)
+                train_ecfp_input = train_loader.collate_fn([train_loader.dataset[i]])
+                train_fps, train_labels = prep_input(*train_ecfp_input)
+                train_fps = model.fp_output(train_fps)
                 train_fps_cache.append((train_fps, train_labels))
 
-            dist_mats.append(model.euclidean_dist(test_fps, train_fps))
+            dist_mats.append(SkipGramModel.euclidean_dist(test_fps, train_fps))
             labels.append(train_labels)
 
         dist_mats = torch.cat(dist_mats, dim=1)
@@ -346,7 +350,7 @@ def test_sgn_model(model, train_loader, test_loader):
         top_sim = torch.topk(dist_mats, top_ks[-1] + 1, dim=1, largest=False)[0]
         for j, topk in enumerate(top_ks):
             nearestn = dist_mats <= top_sim[:, topk-1].unsqueeze(1)
-            nn_labels = torch.matmul(nearestn, train_labels)
+            nn_labels = torch.matmul(nearestn.float(), train_labels)
             correct[j] += (torch.mul(nn_labels, test_labels) > 0).sum().data[0]
     return np.true_divide(correct, total).tolist()
 
@@ -382,11 +386,13 @@ def mol_to_input_label(mol):
 
 
 def simplify_input(x_all):
-    return [[
-        x[1].astype(np.uint8),
-        x[0][:,0].astype(np.uint8),
-        x[2].astype(np.uint8)
-    ] for x in x_all]
+    fps = [AllChem.GetMorganFingerprintAsBitVect(MolFromInchi(x[-1]), 2, nBits=nBits) for x in x_all]
+    np_fps = []
+    for fp in fps:
+        arr = np.zeros((1,), dtype=np.float)
+        DataStructs.ConvertToNumpyArray(fp, arr)
+        np_fps.append(arr)
+    return np_fps
 
 
 def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
@@ -403,9 +409,10 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
         n_bfeat = 0 # parameter_holder.n_bfeat
 
 
-    x_all, edge_to_ix, edge_word_len, node_to_ix, node_word_len = embed_data(x_all, edge_vocab, node_vocab)
+    # x_all, edge_to_ix, edge_word_len, node_to_ix, node_word_len = embed_data(x_all, edge_vocab, node_vocab)
 
-    model = SkipGramModel(10, edge_to_ix, edge_word_len, node_to_ix, node_word_len, 2, batch_size)
+    model = EcfpModel(nBits, 50, batch_size)
+
 
     print("model has {} parameters".format(count_parameters(model)))
     if use_cuda:
@@ -421,7 +428,7 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
     train_loader, validation_loader, test_loader, BCE_weight, len_train = split_data(x_all, y_all, target,
                                                                                      mol_to_graph_transform,
                                                                                      random_state=random_state,
-                                                                                     loader_func=construct_sgm_loader)
+                                                                                     loader_func=construct_ecfp_loader)
     del x_all, y_all, target
 
     loss_hist = []
@@ -431,9 +438,9 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
         tot_loss = 0
         model.train()
         process_bar = tqdm(train_loader)
-        for mols in process_bar:
+        for ecfp_input in process_bar:
             optimizer.zero_grad()
-            loss = model(mol_to_input_label(mols))
+            loss = model(*prep_input(*ecfp_input))
             tot_loss += loss.data[0]
             loss.backward()
             optimizer.step()
