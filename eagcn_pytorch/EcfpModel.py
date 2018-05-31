@@ -41,8 +41,11 @@ class EcfpModel(nn.Module):
         fps = self.fp_output(ecfps)
         dists = self.bn(SkipGramModel.remove_diag(SkipGramModel.euclidean_dist(fps, fps)))
         # dists = self.bn(SkipGramModel.remove_diag(self.l1_dist(fps, fps)))
-        labels = 1 - SkipGramModel.remove_diag(labels.float().matmul(labels.float().t()))
-        return self.loss(dists, labels).div(ecfps.shape[0])
+        labels = SkipGramModel.remove_diag(labels.float().matmul(labels.float().t()))
+        upper = dists.mul(labels).max(dim=-1)[0].view(-1, 1)
+        lower = dists.mul(1-labels).min(dim=-1)[0].view(-1, 1)
+        return dists.abs().mul((dists <= upper).float()).mul((dists >= lower).float()).sum()
+        # return self.loss(dists, labels).div(ecfps.shape[0])
 
     @staticmethod
     def l1_dist(x, y):
