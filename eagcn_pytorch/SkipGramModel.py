@@ -207,9 +207,9 @@ class SkipGramModel(nn.Module):
 
     @staticmethod
     def euclidean_dist(x,y):
-        X = x.pow(2).sum(dim=-1).view(x.shape[-2], -1)
-        Y = y.pow(2).sum(dim=-1).view(-1, y.shape[-2])
-        return (X + Y - 2 * x.matmul(y.t()))
+        X = x.double().pow(2).sum(dim=-1).view(x.shape[-2], -1)
+        Y = y.double().pow(2).sum(dim=-1).view(-1, y.shape[-2])
+        return (X + Y - 2 * x.double().matmul(y.double().t())).float().clamp(min=0)
         # return (X + Y -2*x.matmul(y.t())).sqrt()
 
     @staticmethod

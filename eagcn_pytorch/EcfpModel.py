@@ -35,14 +35,14 @@ class EcfpModel(nn.Module):
         super(EcfpModel, self).__init__()
         self.fp_output = nn.Linear(ecfp_len, fp_len)
         self.bn = nn.BatchNorm1d(batch_size-1, affine=False)
-        self.loss = nn.BCEWithLogitsLoss()
+        self.loss = nn.BCEWithLogitsLoss(size_average=False)
 
     def forward(self, ecfps, labels):
         fps = self.fp_output(ecfps)
-        # dists = self.bn(SkipGramModel.remove_diag(SkipGramModel.euclidean_dist(fps, fps)))
-        dists = self.bn(SkipGramModel.remove_diag(self.l1_dist(fps, fps)))
+        dists = self.bn(SkipGramModel.remove_diag(SkipGramModel.euclidean_dist(fps, fps)))
+        # dists = self.bn(SkipGramModel.remove_diag(self.l1_dist(fps, fps)))
         labels = 1 - SkipGramModel.remove_diag(labels.float().matmul(labels.float().t()))
-        return self.loss(dists, labels)
+        return self.loss(dists, labels).div(ecfps.shape[0])
 
     @staticmethod
     def l1_dist(x, y):
