@@ -987,8 +987,8 @@ def weights_init(m):
     #     m.weight.data.normal_(0.0, 0.02)
     #     return
     if classname.find('Linear') != -1:
-        m.weight.data.fill_(1.0)
-    #     m.weight.data.normal_(0.0, 0.02)
+        # m.weight.data.fill_(1.0)
+        m.weight.data.normal_(0.0, 0.02)
         m.bias.data.fill_(0)
         return
 

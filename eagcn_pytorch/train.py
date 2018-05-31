@@ -82,7 +82,7 @@ if dataset == 'pubchem_chembl' or dataset == 'small_batch_test':
     dropout = 0.3
     random_state = 11
     num_epochs = 100
-    learning_rate = 0.0005
+    learning_rate = 0.005
 
     def output_transform(x):
         return F.log_softmax(x, dim=1)
@@ -351,7 +351,7 @@ def test_sgn_model(model, train_loader, test_loader):
         for j, topk in enumerate(top_ks):
             nearestn = dist_mats <= top_sim[:, topk-1].unsqueeze(1)
             nn_labels = torch.matmul(nearestn.float(), train_labels)
-            correct[j] += (torch.mul(nn_labels, test_labels) > 0).sum().data[0]
+            correct[j] += (torch.mul(nn_labels, test_labels) > 0).sum().item()
     return np.true_divide(correct, total).tolist()
 
 
@@ -441,7 +441,7 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
         for ecfp_input in process_bar:
             optimizer.zero_grad()
             loss = model(*prep_input(*ecfp_input))
-            tot_loss += loss.data[0]
+            tot_loss += loss.item()
             loss.backward()
             optimizer.step()
         loss_hist.append(tot_loss)

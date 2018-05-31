@@ -44,7 +44,7 @@ class EcfpModel(nn.Module):
         labels = SkipGramModel.remove_diag(labels.float().matmul(labels.float().t()))
         upper = dists.mul(labels).max(dim=-1)[0].view(-1, 1)
         lower = dists.mul(1-labels).min(dim=-1)[0].view(-1, 1)
-        return dists.abs().mul((dists <= upper).float()).mul((dists >= lower).float()).sum()
+        return dists.abs().mul((dists <= upper).float()).mul((dists >= lower).float()).clamp(min=0.1).sum()
         # return self.loss(dists, labels).div(ecfps.shape[0])
 
     @staticmethod
