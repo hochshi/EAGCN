@@ -342,7 +342,7 @@ def test_sgn_model(model, train_loader, test_loader):
                 train_fps = model.fp_output(train_fps)
                 train_fps_cache.append((train_fps, train_labels))
 
-            dist_mats.append(EcfpModel.l1_dist(test_fps, train_fps))
+            dist_mats.append(SkipGramModel.euclidean_dist(test_fps, train_fps))
             labels.append(train_labels)
 
         dist_mats = torch.cat(dist_mats, dim=1)
