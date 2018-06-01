@@ -163,9 +163,10 @@ class SkipGramMolEmbed(nn.Module):
 
 
     def batch_norm_nodes(self, node_data, adjs_diag_only, eps=1e-6):
-        mean = node_data.sum().div(adjs_diag_only.float().sum())
-        var = node_data.pow(2).sum().div(adjs_diag_only.float().sum()) - mean.pow(2) + eps
-        return (node_data-mean).div(var.sqrt()).mul(adjs_diag_only.sum(dim=-2).unsqueeze(2).float())
+        nz = adjs_diag_only.max(dim=2)[0].float().unsqueeze(2).expand(-1, -1, self.fp_len)
+        mean = node_data.sum().div(nz.float().sum())
+        var = node_data.pow(2).sum().div(nz.float().sum()) - mean.pow(2) + eps
+        return (node_data-mean).div(var.sqrt()).mul(nz)
 
 
     def batch_norm_edges(self, edge_data, adjs_no_diag, eps=1e-6):

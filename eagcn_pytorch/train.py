@@ -347,7 +347,7 @@ def test_sgn_model(model, train_loader, test_loader):
         for j, topk in enumerate(top_ks):
             nearestn = dist_mats <= top_sim[:, topk-1].unsqueeze(1)
             nn_labels = torch.matmul(nearestn, train_labels)
-            correct[j] += (torch.mul(nn_labels, test_labels) > 0).sum().data[0]
+            correct[j] += (torch.mul(nn_labels, test_labels) > 0).sum().item()
     return np.true_divide(correct, total).tolist()
 
 
@@ -426,7 +426,7 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
 
     loss_hist = []
     process_bar0 = trange(num_epochs)
-    test_wrapper(model, train_loader, validation_loader)
+    # test_wrapper(model, train_loader, validation_loader)
     for epoch in process_bar0:
         tot_loss = 0
         model.train()
@@ -441,8 +441,8 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
         tqdm.write('Epoch: {}, Loss: {}'.format(epoch, tot_loss))
 
         # report performance
-        if epoch > 0 and 0 == epoch % 10:
-            test_wrapper(model, train_loader, validation_loader)
+        # if epoch > 0 and 0 == epoch % 10:
+        #     test_wrapper(model, train_loader, validation_loader)
     tqdm.write('Loss history: {}'.format(', '.join(map(str, loss_hist))))
     test_wrapper(model, train_loader, validation_loader)
     test_wrapper(model, train_loader, test_loader)
