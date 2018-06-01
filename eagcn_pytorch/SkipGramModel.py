@@ -158,26 +158,50 @@ class SkipGramMolEmbed(nn.Module):
         return self.node_embeddings(afms.view(-1)).mul(nz.view(-1).unsqueeze(1)).view(nz.shape + (-1,))
 
     def get_next_node(self, adj_mat, node_data, edge_data):
-        return edge_data.mul(node_data.unsqueeze(1)).sum(dim=-2)
+        # Must remember to sum over the rows!!!
+        return edge_data.mul(node_data.unsqueeze(1)).sum(dim=-3)
+
+
+    def batch_norm_nodes(self, node_data, adjs_diag_only, eps=1e-6):
+        mean = node_data.sum().div(adjs_diag_only.float().sum())
+        var = node_data.pow(2).sum().div(adjs_diag_only.float().sum()) - mean.pow(2) + eps
+        return (node_data-mean).div(var.sqrt()).mul(adjs_diag_only.sum(dim=-2).unsqueeze(2).float())
+
+
+    def batch_norm_edges(self, edge_data, adjs_no_diag, eps=1e-6):
+        adjs_no_diag = adjs_no_diag.unsqueeze(3).expand(-1, -1, -1, self.fp_len).float()
+        mean = edge_data.sum().div(adjs_no_diag.sum())
+        var = edge_data.pow(2).sum().div(adjs_no_diag.sum()) - mean.pow(2) + eps
+        return (edge_data-mean).div(var.sqrt()).mul(adjs_no_diag)
 
     def forward(self, adjs, afms, bfts):
         adjs_no_diag = torch.clamp(adjs - Variable(from_numpy(np.eye(adjs.size()[1])).long()), min=0)
 
-        edge_data = self.embed_edges(adjs_no_diag, bfts)
-        node_data = self.embed_nodes(adjs, afms)
+        edge_data = self.batch_norm_edges(self.embed_edges(adjs_no_diag, bfts), adjs_no_diag)
+        node_data = self.batch_norm_nodes(self.embed_nodes(adjs, afms), adjs - adjs_no_diag)
 
 
 
         node_current = node_data
         adj_mat = adjs_no_diag
         node_next = node_current
-
         fps = list()
-        fps.append(node_next)
+        fps.append(node_data)
 
-        for radius in range(self.radius):
-            node_next = self.get_next_node(adj_mat, node_next, edge_data)
-            fps.append(node_next)
+        # Very important sum over ROWS!!!
+        r1 = edge_data.mul(adjs_no_diag.unsqueeze(3).float()).mul(node_data.unsqueeze(1))
+        fps.append(self.batch_norm_edges(r1, adjs_no_diag).sum(dim=-3))
+        t1 = adjs_no_diag.bmm(adjs_no_diag).clamp(max=1) - Variable(from_numpy(np.eye(adjs.size()[1])).long())
+        r2 = r1.permute(0, 3, 1, 2).matmul(edge_data.permute(0, 3, 2, 1)).permute(0, 2, 3, 1).mul(
+            t1.float().unsqueeze(3)).mul(node_data.unsqueeze(1))
+        fps.append(self.batch_norm_edges(r2, t1).sum(dim=-3))
+
+        # fps = list()
+        # fps.append(node_next)
+        #
+        # for radius in range(self.radius):
+        #     node_next = self.get_next_node(adj_mat, node_next, edge_data)
+        #     fps.append(node_next)
         return torch.cat(fps, dim=-1).sum(dim=-2)
 
 class SkipGramModel(nn.Module):
@@ -190,17 +214,20 @@ class SkipGramModel(nn.Module):
 
     def __init__(self, fp_len, edge_to_ix, edge_word_len, node_to_ix, node_word_len, radius, batch_size):
         super(SkipGramModel, self).__init__()
-        # self.w_embedding = SkipGramMolEmbed(fp_len, edge_to_ix, edge_word_len, node_to_ix, node_word_len, radius)
+        self.w_embedding = SkipGramMolEmbed(fp_len, edge_to_ix, edge_word_len, node_to_ix, node_word_len, radius+1)
         # self.c_embedding = SkipGramMolEmbed(fp_len, edge_to_ix, edge_word_len, node_to_ix, node_word_len, radius)
-        self.w_embedding = NNMolEmbed(fp_len, edge_to_ix, edge_word_len, node_to_ix, node_word_len, radius+1)
+        # self.w_embedding = NNMolEmbed(fp_len, edge_to_ix, edge_word_len, node_to_ix, node_word_len, radius+1)
         self.init_emb()
         self.loss = nn.BCEWithLogitsLoss()
-        self.bn = nn.BatchNorm1d(batch_size-1, affine=False)
+        # self.bn = nn.BatchNorm1d(batch_size-1, affine=False)
 
     def init_emb(self):
         initrange = 0.5 / self.w_embedding.fp_len
-        self.w_embedding.edge_embeddings.weight.data.uniform_(-initrange, initrange)
-        self.w_embedding.node_embeddings.weight.data.uniform_(-initrange, initrange)
+        # self.w_embedding.edge_embeddings.weight.data.uniform_(-initrange, initrange)
+        # self.w_embedding.node_embeddings.weight.data.uniform_(-initrange, initrange)
+
+        self.w_embedding.edge_embeddings.weight.data.normal_(0, initrange)
+        self.w_embedding.node_embeddings.weight.data.normal_(0, initrange)
 
         # self.c_embedding.edge_embeddings.weight.data.uniform_(-0, 0)
         # self.c_embedding.node_embeddings.weight.data.uniform_(-0, 0)
@@ -223,12 +250,16 @@ class SkipGramModel(nn.Module):
         w2 = torch.norm(B, 2, 1).unsqueeze(0).expand(A.shape[0], -1)
         return dist_mat / (w1 * w2).clamp(min=eps)
 
+    @staticmethod
+    def norm_dists(dists, eps=1e-6):
+        return (dists-dists.mean()).div((dists.var() + eps).sqrt())
+
     # def forward(self, pos_context, neg_context, sizes, padding):
     def forward(self, mols):
 
         fps = self.w_embedding(*mols[0:-1])
         # dists = self.remove_diag(self.euclidean_dist(fps, fps)).exp().pow(-1).clamp(max=1)
-        dists = self.bn(self.remove_diag(self.euclidean_dist(fps, fps)))
+        dists = self.norm_dists(self.remove_diag(self.euclidean_dist(fps, fps)))
         # dists = self.bn(dists)
         labels = 1 - self.remove_diag(mols[-1].float().matmul(mols[-1].float().t()))
         # return (dists.mul(labels).neg() + dists.mul(1-labels).exp().add(-1).log() - dists.mul(1-labels)).neg().mean()

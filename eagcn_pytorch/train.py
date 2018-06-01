@@ -434,14 +434,14 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
         for mols in process_bar:
             optimizer.zero_grad()
             loss = model(mol_to_input_label(mols))
-            tot_loss += loss.data[0]
+            tot_loss += loss.item()
             loss.backward()
             optimizer.step()
         loss_hist.append(tot_loss)
         tqdm.write('Epoch: {}, Loss: {}'.format(epoch, tot_loss))
 
         # report performance
-        if 0 == epoch % 10:
+        if epoch > 0 and 0 == epoch % 10:
             test_wrapper(model, train_loader, validation_loader)
     tqdm.write('Loss history: {}'.format(', '.join(map(str, loss_hist))))
     test_wrapper(model, train_loader, validation_loader)
