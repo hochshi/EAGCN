@@ -190,6 +190,9 @@ class SkipGramMolEmbed(nn.Module):
         fps.append(node_data)
 
         # Very important sum over ROWS!!!
+        # TODO: Should I try a different mechanism in which edge data and node data are multiplied
+        # but next level data is added? n1-(e1)-n2-(e2)-n3 turns into: (e1*n2)+(e2+n3)
+        # or the other way around? (e1+n2)*(e2+n3)?
         r1 = edge_data.mul(adjs_no_diag.unsqueeze(3).float()).mul(node_data.unsqueeze(1))
         fps.append(self.batch_norm_edges(r1, adjs_no_diag).sum(dim=-3))
         t1 = adjs_no_diag.bmm(adjs_no_diag).clamp(max=1) - Variable(from_numpy(np.eye(adjs.size()[1])).long())
@@ -262,9 +265,12 @@ class SkipGramModel(nn.Module):
         # dists = self.remove_diag(self.euclidean_dist(fps, fps)).exp().pow(-1).clamp(max=1)
         dists = self.norm_dists(self.remove_diag(self.euclidean_dist(fps, fps)))
         # dists = self.bn(dists)
-        labels = 1 - self.remove_diag(mols[-1].float().matmul(mols[-1].float().t()))
+        labels = self.remove_diag(mols[-1].float().matmul(mols[-1].float().t()))
+        true_min = dists.mul(labels).min(dim=-1)[0].view(-1, 1)
+        false_min = dists.mul(1-labels).min(dim=-1)[0].view(-1, 1)
+        return true_min.add(false_min.neg()).mul(true_min.sign().mul(false_min.sign())).clamp(min=0).sum()
         # return (dists.mul(labels).neg() + dists.mul(1-labels).exp().add(-1).log() - dists.mul(1-labels)).neg().mean()
-        return self.loss(dists, labels)
+        # return self.loss(dists, labels)
 
         # pos_fps = self.w_embedding(*pos[0:-1])
         # neg_fps = self.w_embedding(*neg[0:-1])
