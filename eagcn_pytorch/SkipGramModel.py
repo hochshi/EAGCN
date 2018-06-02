@@ -268,7 +268,7 @@ class SkipGramModel(nn.Module):
         labels = self.remove_diag(mols[-1].float().matmul(mols[-1].float().t()))
         true_min = dists.mul(labels).min(dim=-1)[0].view(-1, 1)
         false_min = dists.mul(1-labels).min(dim=-1)[0].view(-1, 1)
-        return true_min.add(false_min.neg()).mul(true_min.sign().mul(false_min.sign())).clamp(min=0).sum()
+        return true_min.add(false_min.neg()).mul(true_min.sign().mul(false_min.sign())).clamp(min=0).sum().div(true_min.sign().abs().sum())
         # return (dists.mul(labels).neg() + dists.mul(1-labels).exp().add(-1).log() - dists.mul(1-labels)).neg().mean()
         # return self.loss(dists, labels)
 
