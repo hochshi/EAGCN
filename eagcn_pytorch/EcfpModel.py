@@ -39,7 +39,7 @@ class EcfpModel(nn.Module):
 
     def forward(self, ecfps, labels):
         fps = self.fp_output(ecfps)
-        dists = self.bn(SkipGramModel.remove_diag(SkipGramModel.euclidean_dist(fps, fps)))
+        dists = self.bn(SkipGramModel.remove_diag(self.canberra_dist(fps, fps)))
         # dists = self.bn(SkipGramModel.remove_diag(self.l1_dist(fps, fps)))
         labels = SkipGramModel.remove_diag(labels.float().matmul(labels.float().t()))
         upper = dists.mul(labels).min(dim=-1)[0].view(-1, 1)
@@ -59,7 +59,7 @@ class EcfpModel(nn.Module):
     def canberra_dist(x, y):
         dists = []
         for i in range(x.shape[0]):
-            dists.append(y.add(x[i].neg().view(1, -1)).abs().div(y.abs().add(x[i].abs().view(1, -1))))
+            dists.append(y.add(x[i].neg().view(1, -1)).abs().div(y.abs().add(x[i].abs().view(1, -1))).sum(dim=0))
         return torch.cat(dists).view(x.shape[0], -1)
 
     @staticmethod
