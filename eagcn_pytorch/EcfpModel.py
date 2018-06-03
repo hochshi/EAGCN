@@ -59,7 +59,7 @@ class EcfpModel(nn.Module):
     def canberra_dist(x, y):
         dists = []
         for i in range(x.shape[0]):
-            dists.append(y.add(x[i].neg().view(1, -1)).abs().div(y.abs().add(x[i].abs().view(1, -1))).sum(dim=0))
+            dists.append(y.add(x[i].neg().view(1, -1)).abs().div(y.abs().add(x[i].abs().view(1, -1))).sum(dim=1))
         return torch.cat(dists).view(x.shape[0], -1)
 
     @staticmethod
