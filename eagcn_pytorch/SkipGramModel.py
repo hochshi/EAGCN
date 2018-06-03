@@ -163,10 +163,14 @@ class SkipGramMolEmbed(nn.Module):
 
 
     def batch_norm_nodes(self, node_data, adjs_diag_only, eps=1e-6):
-        nz = adjs_diag_only.max(dim=2)[0].float().unsqueeze(2).expand(-1, -1, self.fp_len)
-        mean = node_data.sum().div(nz.float().sum())
-        var = node_data.pow(2).sum().div(nz.float().sum()) - mean.pow(2) + eps
-        return (node_data-mean).div(var.sqrt()).mul(nz)
+        nz = adjs_diag_only.max(dim=2)[0].float().unsqueeze(2)
+        mean = node_data.sum(dim=-2).sum(dim=-2).div(nz.sum())
+        var = node_data.pow(2).sum(dim=-2).sum(dim=-2).div(nz.sum()) - mean.pow(2) + eps
+        return (node_data - mean).mul(nz).div(var.sqrt())
+        # nz = adjs_diag_only.max(dim=2)[0].float().unsqueeze(2).expand(-1, -1, self.fp_len)
+        # mean = node_data.sum().div(nz.float().sum())
+        # var = node_data.pow(2).sum().div(nz.float().sum()) - mean.pow(2) + eps
+        # return (node_data-mean).div(var.sqrt()).mul(nz)
 
 
     def batch_norm_edges(self, edge_data, adjs_no_diag, eps=1e-6):
@@ -178,7 +182,7 @@ class SkipGramMolEmbed(nn.Module):
     def forward(self, adjs, afms, bfts):
         adjs_no_diag = torch.clamp(adjs - Variable(from_numpy(np.eye(adjs.size()[1])).long()), min=0)
 
-        edge_data = self.batch_norm_edges(self.embed_edges(adjs_no_diag, bfts), adjs_no_diag)
+        edge_data = self.embed_edges(adjs_no_diag, bfts)
         node_data = self.batch_norm_nodes(self.embed_nodes(adjs, afms), adjs - adjs_no_diag)
 
 
@@ -194,11 +198,11 @@ class SkipGramMolEmbed(nn.Module):
         # but next level data is added? n1-(e1)-n2-(e2)-n3 turns into: (e1*n2)+(e2+n3)
         # or the other way around? (e1+n2)*(e2+n3)?
         r1 = edge_data.mul(adjs_no_diag.unsqueeze(3).float()).mul(node_data.unsqueeze(1))
-        fps.append(self.batch_norm_edges(r1, adjs_no_diag).sum(dim=-3))
+        fps.append(self.batch_norm_nodes(r1.sum(dim=-3), adjs - adjs_no_diag))
         t1 = adjs_no_diag.bmm(adjs_no_diag).clamp(max=1) - Variable(from_numpy(np.eye(adjs.size()[1])).long())
         r2 = r1.permute(0, 3, 1, 2).matmul(edge_data.permute(0, 3, 2, 1)).permute(0, 2, 3, 1).mul(
             t1.float().unsqueeze(3)).mul(node_data.unsqueeze(1))
-        fps.append(self.batch_norm_edges(r2, t1).sum(dim=-3))
+        fps.append(self.batch_norm_nodes(r2.sum(dim=-3), adjs - adjs_no_diag))
 
         # fps = list()
         # fps.append(node_next)
@@ -268,9 +272,9 @@ class SkipGramModel(nn.Module):
         labels = self.remove_diag(mols[-1].float().matmul(mols[-1].float().t()))
         true_min = dists.mul(labels).min(dim=-1)[0].view(-1, 1)
         false_min = dists.mul(1-labels).min(dim=-1)[0].view(-1, 1)
-        return true_min.add(false_min.neg()).mul(true_min.sign().mul(false_min.sign())).clamp(min=0).sum().div(true_min.sign().abs().sum())
+        # return true_min.add(false_min.neg()).mul(true_min.sign().mul(false_min.sign())).clamp(min=0).sum().div(true_min.sign().abs().sum())
         # return (dists.mul(labels).neg() + dists.mul(1-labels).exp().add(-1).log() - dists.mul(1-labels)).neg().mean()
-        # return self.loss(dists, labels)
+        return self.loss(dists, 1-labels)
 
         # pos_fps = self.w_embedding(*pos[0:-1])
         # neg_fps = self.w_embedding(*neg[0:-1])
