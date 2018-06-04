@@ -17,6 +17,7 @@ from torch.utils.data import Dataset
 from sklearn import metrics
 from sklearn.utils import shuffle, resample
 from sklearn.model_selection import train_test_split, KFold
+from sklearn.metrics import precision_recall_fscore_support
 import os
 
 import matplotlib.pyplot as plt
@@ -84,36 +85,20 @@ def test_model(loader, model, tasks):
     """
     model.eval()
 
-    total = Variable(FloatTensor([0]))
-    true_positive = Variable(FloatTensor([0]))
-    true_negative = Variable(FloatTensor([0]))
-    precision_total = Variable(FloatTensor([0]))
-    recall_total = Variable(FloatTensor([0]))
-    specificity_total = Variable(FloatTensor([0]))
+    true_labels = []
+    pred_labels = []
 
     for adj, afm, btf, orderAtt, aromAtt, conjAtt, ringAtt, labels in loader:
         adj_batch, afm_batch, btf_batch, label_batch = Variable(adj), Variable(afm), Variable(btf), Variable(labels)
         orderAtt_batch, aromAtt_batch, conjAtt_batch, ringAtt_batch = Variable(orderAtt), Variable(aromAtt), Variable(
             conjAtt), Variable(ringAtt)
         outputs = model(adj_batch, afm_batch, btf_batch, orderAtt_batch, aromAtt_batch, conjAtt_batch, ringAtt_batch)
-        label_batch = label_batch.squeeze(1).long()
-        outputs = F.log_softmax(outputs, dim=1).max(dim=1)[1]
-
-        true_positive += outputs.float().dot(label_batch.float())
-        true_negative += (0 == outputs).float().dot((0 == label_batch).float())
-        precision_total += outputs.sum().float()
-        recall_total += label_batch.sum().float()
-        specificity_total += (label_batch.shape[0] - label_batch.sum()).float()
-        total += label_batch.shape[0]
+        true_labels.append(label_batch.squeeze(1).long().data.numpy())
+        pred_labels.append(F.log_softmax(outputs, dim=1).max(dim=1)[1].data.numpy())
 
     model.train()
 
-    return (
-        true_positive.float().div(precision_total.float() + 1e-5).data[0],
-        true_positive.float().div(recall_total.float() + 1e-5).data[0],
-        true_negative.float().div(specificity_total.float() + 1e-5).data[0],
-        (true_positive.float() + true_negative.float()).div(total.float() + 1e-5).data[0]
-    )
+    return precision_recall_fscore_support(np.concatenate(true_labels), np.concatenate(pred_labels), average='binary')
 
 def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
     x_all, y_all, target, sizes = load_data(dataset)
@@ -187,9 +172,9 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
                 'Step: [{}/{}], '
                 'Loss: {},'
                 '\n'
-                'Train: Precision: {}, Recall: {}, Specificity: {}, Accuracy: {}'
+                'Train: Precision: {}, Recall: {}, fbeta_score: {}, Support: {}'
                 '\n'
-                'Validation: Precision: {}, Recall: {}, Specificity: {}, Accuracy: {}'.format(
+                'Validation: Precision: {}, Recall: {}, fbeta_score: {}, Support: {}'.format(
                     epoch + 1, num_epochs, i + 1,
                     math.ceil(len_train / batch_size), tot_loss,
                     tpre, trec, tspe, tacc,
@@ -199,7 +184,7 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
     print("Calculating train precision and recall...")
     tpre, trec, tspe, tacc = test_model(test_loader, model, tasks)
     print(
-        'Test Precision: {}, Recall: {}, Specificity: {}, Accuracy: {}'.format(tpre, trec, tspe, tacc)
+        'Test Precision: {}, Recall: {}, fbeta_score: {}, Support: {}'.format(tpre, trec, tspe, tacc)
     )
 
 tasks = all_tasks # [task]
