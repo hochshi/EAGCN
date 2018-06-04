@@ -338,7 +338,7 @@ def test_sgn_model(model, train_loader, test_loader):
                 train_fps = model.w_embedding(train_adj, train_afm, train_bft)
                 train_fps_cache.append((train_fps, train_labels))
 
-            dist_mats.append(model.euclidean_dist(test_fps, train_fps))
+            dist_mats.append(model.canberra_dist(train_fps, test_fps).permute(1,0))
             labels.append(train_labels)
 
         dist_mats = torch.cat(dist_mats, dim=1)
@@ -426,7 +426,7 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
 
     loss_hist = []
     process_bar0 = trange(num_epochs)
-    # test_wrapper(model, train_loader, validation_loader)
+    test_wrapper(model, train_loader, validation_loader)
     for epoch in process_bar0:
         tot_loss = 0
         model.train()
@@ -441,8 +441,8 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
         tqdm.write('Epoch: {}, Loss: {}'.format(epoch, tot_loss))
 
         # report performance
-        # if epoch > 0 and 0 == epoch % 10:
-        #     test_wrapper(model, train_loader, validation_loader)
+        if epoch > 0 and 0 == epoch % 25:
+            test_wrapper(model, train_loader, validation_loader)
     tqdm.write('Loss history: {}'.format(', '.join(map(str, loss_hist))))
     test_wrapper(model, train_loader, validation_loader)
     test_wrapper(model, train_loader, test_loader)

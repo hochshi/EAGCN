@@ -183,7 +183,7 @@ class SkipGramMolEmbed(nn.Module):
         adjs_no_diag = torch.clamp(adjs - Variable(from_numpy(np.eye(adjs.size()[1])).long()), min=0)
 
         edge_data = self.embed_edges(adjs_no_diag, bfts)
-        node_data = self.batch_norm_nodes(self.embed_nodes(adjs, afms), adjs - adjs_no_diag)
+        node_data = self.embed_nodes(adjs, afms)
 
 
 
@@ -198,11 +198,11 @@ class SkipGramMolEmbed(nn.Module):
         # but next level data is added? n1-(e1)-n2-(e2)-n3 turns into: (e1*n2)+(e2+n3)
         # or the other way around? (e1+n2)*(e2+n3)?
         r1 = edge_data.mul(adjs_no_diag.unsqueeze(3).float()).mul(node_data.unsqueeze(1))
-        fps.append(self.batch_norm_nodes(r1.sum(dim=-3), adjs - adjs_no_diag))
+        fps.append(r1.sum(dim=-3))
         t1 = adjs_no_diag.bmm(adjs_no_diag).clamp(max=1) - Variable(from_numpy(np.eye(adjs.size()[1])).long())
         r2 = r1.permute(0, 3, 1, 2).matmul(edge_data.permute(0, 3, 2, 1)).permute(0, 2, 3, 1).mul(
             t1.float().unsqueeze(3)).mul(node_data.unsqueeze(1))
-        fps.append(self.batch_norm_nodes(r2.sum(dim=-3), adjs - adjs_no_diag))
+        fps.append(r2.sum(dim=-3))
 
         # fps = list()
         # fps.append(node_next)
@@ -226,7 +226,8 @@ class SkipGramModel(nn.Module):
         # self.c_embedding = SkipGramMolEmbed(fp_len, edge_to_ix, edge_word_len, node_to_ix, node_word_len, radius)
         # self.w_embedding = NNMolEmbed(fp_len, edge_to_ix, edge_word_len, node_to_ix, node_word_len, radius+1)
         self.init_emb()
-        self.loss = nn.BCEWithLogitsLoss()
+        # self.loss = nn.BCEWithLogitsLoss()
+        self.loss = nn.MultiLabelSoftMarginLoss()
         # self.bn = nn.BatchNorm1d(batch_size-1, affine=False)
 
     def init_emb(self):
@@ -248,6 +249,14 @@ class SkipGramModel(nn.Module):
         # return (X + Y -2*x.matmul(y.t())).sqrt()
 
     @staticmethod
+    def canberra_dist(x, y, eps=1e-6):
+        dists = []
+        for i in range(x.shape[0]):
+            dists.append(y.add(x[i].neg().view(1, -1)).abs().div(y.abs().add(x[i].abs().view(1, -1)) + eps).sum(dim=1))
+        return torch.cat(dists).view(x.shape[0], -1)
+
+
+    @staticmethod
     def remove_diag(x):
         return x[1 - from_numpy(np.eye(x.shape[0])).byte()].view(x.shape[-2], -1)
 
@@ -267,7 +276,7 @@ class SkipGramModel(nn.Module):
 
         fps = self.w_embedding(*mols[0:-1])
         # dists = self.remove_diag(self.euclidean_dist(fps, fps)).exp().pow(-1).clamp(max=1)
-        dists = self.norm_dists(self.remove_diag(self.euclidean_dist(fps, fps)))
+        dists = self.norm_dists(self.remove_diag(self.canberra_dist(fps, fps)))
         # dists = self.bn(dists)
         labels = self.remove_diag(mols[-1].float().matmul(mols[-1].float().t()))
         true_min = dists.mul(labels).min(dim=-1)[0].view(-1, 1)

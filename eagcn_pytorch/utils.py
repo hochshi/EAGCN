@@ -20,8 +20,8 @@ import torch.nn.functional as F
 from collections import defaultdict
 from collections import OrderedDict
 
-use_cuda = torch.cuda.is_available()
-# use_cuda = False
+# use_cuda = torch.cuda.is_available()
+use_cuda = False
 
 if use_cuda:
     FloatTensor = torch.cuda.FloatTensor
