@@ -335,7 +335,7 @@ def test_model_auc(model, data_loader):
     aps = average_precision_score(labels, outputs)
 
 
-    return roc_auc_score(labels, outputs)
+    return roc_auc, pr_auc, aps
 
 
 def cosine_sim(A, B, eps=1e-8):
