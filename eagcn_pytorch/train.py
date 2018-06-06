@@ -18,6 +18,8 @@ from sklearn import metrics
 from sklearn.utils import shuffle, resample
 from sklearn.model_selection import train_test_split, KFold
 from sklearn.metrics import precision_recall_fscore_support
+from sklearn.metrics import roc_auc_score, precision_recall_curve, auc, average_precision_score
+
 import os
 
 import matplotlib.pyplot as plt
@@ -87,18 +89,30 @@ def test_model(loader, model, tasks):
 
     true_labels = []
     pred_labels = []
+    outputs = []
+    labels = []
 
     for adj, afm, btf, orderAtt, aromAtt, conjAtt, ringAtt, labels in loader:
         adj_batch, afm_batch, btf_batch, label_batch = Variable(adj), Variable(afm), Variable(btf), Variable(labels)
         orderAtt_batch, aromAtt_batch, conjAtt_batch, ringAtt_batch = Variable(orderAtt), Variable(aromAtt), Variable(
             conjAtt), Variable(ringAtt)
-        outputs = model(adj_batch, afm_batch, btf_batch, orderAtt_batch, aromAtt_batch, conjAtt_batch, ringAtt_batch)
-        true_labels.append(label_batch.squeeze(1).long().data.numpy())
-        pred_labels.append(F.log_softmax(outputs, dim=1).max(dim=1)[1].data.numpy())
+        # outputs = model(adj_batch, afm_batch, btf_batch, orderAtt_batch, aromAtt_batch, conjAtt_batch, ringAtt_batch)
+        # pred_labels.append(F.log_softmax(outputs, dim=1).max(dim=1)[1].cpu().data.numpy())
+        outputs.append(model(adj_batch, afm_batch, btf_batch, orderAtt_batch, aromAtt_batch, conjAtt_batch, ringAtt_batch))
+        labels.append(label_batch.squeeze(1).long().cpu().data.numpy())
+
+    outputs = np.concatenate(outputs)
+    labels = np.concatenate(labels)
+
+    precision, recall, _ = precision_recall_curve(labels, outputs)
+    pr_auc = auc(recall, precision)
+    roc_auc = roc_auc_score(labels, outputs)
+    aps = average_precision_score(labels, outputs)
 
     model.train()
 
-    return precision_recall_fscore_support(np.concatenate(true_labels), np.concatenate(pred_labels), average='binary')
+    return [roc_auc, pr_auc, aps]
+    # return precision_recall_fscore_support(np.concatenate(true_labels), np.concatenate(pred_labels), average='binary')
 
 def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
     x_all, y_all, target, sizes = load_data(dataset)
@@ -155,8 +169,9 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
             optimizer.zero_grad()
             outputs = model(adj_batch, afm_batch, btf_batch, orderAtt_batch, aromAtt_batch, conjAtt_batch,
                             ringAtt_batch)
-            weights = weight_func(BCE_weight, label_batch)
-            loss = nn.CrossEntropyLoss(weight=weights)(outputs, label_batch.squeeze(1).long())
+            # weights = weight_func(BCE_weight, label_batch)
+            # loss = nn.CrossEntropyLoss(weight=weights)(outputs, label_batch.squeeze(1).long())
+            loss = F.binary_cross_entropy_with_logits(outputs.view(-1), label_batch.float().view(-1))
             tot_loss += loss.data[0]
             loss.backward()
             optimizer.step()
