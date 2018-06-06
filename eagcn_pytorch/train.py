@@ -12,7 +12,7 @@ from time import gmtime, strftime
 from tqdm import tqdm
 from tqdm import trange
 from scipy.stats import rankdata
-from sklearn.metrics import roc_auc_score
+from sklearn.metrics import roc_auc_score, precision_recall_curve, auc, average_precision_score
 
 # Training settings
 dataset = 'hiv'  # 'tox21', 'hiv', 'pubchem_chembl', 'small_batch_test'
@@ -329,6 +329,12 @@ def test_model_auc(model, data_loader):
     outputs = np.concatenate(outputs)
     labels = np.concatenate(labels)
 
+    precision, recall, _ = precision_recall_curve(labels, outputs)
+    pr_auc = auc(recall, precision)
+    roc_auc = roc_auc_score(labels, outputs)
+    aps = average_precision_score(labels, outputs)
+
+
     return roc_auc_score(labels, outputs)
 
 
@@ -439,6 +445,7 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
 
     model.apply(weights_init)
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
+    loss_func = nn.CrossEntropyLoss()
 
     validation_acc_history = []
     acc_history = np.empty([4, 2, num_epochs])
@@ -461,8 +468,7 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
             optimizer.zero_grad()
             mols = mol_to_input_label(mols)
             outputs = model(mols)
-            weights = weight_func(BCE_weight, mols[-1])
-            loss = nn.CrossEntropyLoss(weight=weights)(outputs, mols[-1].squeeze().long())
+            loss = loss_func(outputs, mols[-1].squeeze().long())
             tot_loss += loss.item()
             loss.backward()
             optimizer.step()
