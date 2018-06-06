@@ -220,14 +220,15 @@ class SkipGramModel(nn.Module):
         c_embedding: Embedding for context words
     """
 
-    def __init__(self, fp_len, edge_to_ix, edge_word_len, node_to_ix, node_word_len, radius, batch_size):
+    def __init__(self, fp_len, edge_to_ix, edge_word_len, node_to_ix, node_word_len, radius, nclass):
         super(SkipGramModel, self).__init__()
-        self.w_embedding = SkipGramMolEmbed(fp_len, edge_to_ix, edge_word_len, node_to_ix, node_word_len, radius+1)
+        # self.w_embedding = SkipGramMolEmbed(fp_len, edge_to_ix, edge_word_len, node_to_ix, node_word_len, radius+1)
         # self.c_embedding = SkipGramMolEmbed(fp_len, edge_to_ix, edge_word_len, node_to_ix, node_word_len, radius)
-        # self.w_embedding = NNMolEmbed(fp_len, edge_to_ix, edge_word_len, node_to_ix, node_word_len, radius+1)
+        self.w_embedding = NNMolEmbed(fp_len, edge_to_ix, edge_word_len, node_to_ix, node_word_len, radius+1)
         self.init_emb()
-        self.loss = nn.BCEWithLogitsLoss()
-        # self.bn = nn.BatchNorm1d(batch_size-1, affine=False)
+        # self.loss = nn.BCEWithLogitsLoss()
+        self.bn = nn.BatchNorm1d(fp_len*(radius+1), affine=False)
+        self.classifier = nn.Linear(fp_len*(radius+1), nclass)
 
     def init_emb(self):
         initrange = 0.5 / self.w_embedding.fp_len
@@ -266,121 +267,7 @@ class SkipGramModel(nn.Module):
     def forward(self, mols):
 
         fps = self.w_embedding(*mols[0:-1])
-        # dists = self.remove_diag(self.euclidean_dist(fps, fps)).exp().pow(-1).clamp(max=1)
-        dists = self.norm_dists(self.remove_diag(self.euclidean_dist(fps, fps)))
-        # dists = self.bn(dists)
-        labels = self.remove_diag(mols[-1].float().matmul(mols[-1].float().t()))
-        true_min = dists.mul(labels).min(dim=-1)[0].view(-1, 1)
-        false_min = dists.mul(1-labels).min(dim=-1)[0].view(-1, 1)
-        # return true_min.add(false_min.neg()).mul(true_min.sign().mul(false_min.sign())).clamp(min=0).sum().div(true_min.sign().abs().sum())
-        # return (dists.mul(labels).neg() + dists.mul(1-labels).exp().add(-1).log() - dists.mul(1-labels)).neg().mean()
-        return self.loss(dists, 1-labels)
-
-        # pos_fps = self.w_embedding(*pos[0:-1])
-        # neg_fps = self.w_embedding(*neg[0:-1])
-        # pos_dists = self.remove_diag(self.euclidean_dist(pos_fps, pos_fps))
-        # mins = pos_dists.min(dim=-1)[0].unsqueeze(1)
-        # pos_labels = Variable(from_numpy(np.ones(mins.shape)).float())
-        # neg_dists = self.euclidean_dist(pos_fps, neg_fps)
-        # neg_labels = Variable(from_numpy(np.zeros(neg_dists.shape)).float())
-        # dists = torch.cat([mins, neg_dists], dim=-1).exp().pow(-1).clamp(max=1)
-        # labels = torch.cat([pos_labels, neg_labels], dim=-1)
-        # return self.loss(dists, labels.detach())
-
-
-        # pos_labels = pos_dists <= pos_dists.min(dim=-1)[0].unsqueeze(1)
-        # neg_dists = self.euclidean_dist(pos_fps, neg_fps)
-        # neg_labels = Variable(from_numpy(np.zeros(neg_dists.shape)).byte())
-        # dists = torch.cat([pos_dists, neg_dists], dim=-1).exp().pow(-1).clamp(max=1)
-        # labels = torch.cat([pos_labels, neg_labels], dim=-1)
-        # return self.loss(dists, labels.float().detach())
-        # correct_labels = pos_context[-1].max(dim=-1)[1]
-        # correct_label = sizes[0]
-        # dists = []
-        # for i, neg in enumerate(neg_context):
-        #     neg_fps = self.w_embedding(*neg[0:-1])
-        #     if correct_label == i:
-        #         dist = self.remove_diag(self.euclidean_dist(word_fps, neg_fps))
-        #     else:
-        #         dist = self.euclidean_dist(word_fps, neg_fps)
-        #         #     # dists.append(dist)
-        #         #     # dist = self.euclidean_dist(word_fps, neg_fps)
-        #         #     # dist = self.cosine_sim(word_fps, neg_fps)
-        #     dists.append(dist.min(dim=-1)[0])
-        # #
-        # dists = torch.cat(dists, dim=-1).view(correct_labels.shape + (-1,))
-        # dists = self.remove_diag(self.euclidean_dist(pos_fps, pos_fps))
-        # correct_labels = dists.min(dim=-1)[1]
-        # dists = torch.cat([dists, self.euclidean_dist(pos_fps, neg_fps)], dim=-1)
-        # dists = F.softmin(dists, dim=-1).log()
-        # return F.nll_loss(dists, correct_labels)
-
-        # word_fps = self.w_embedding(*pos_context[0:-1])
-        # neg_fps = self.w_embedding(torch.cat([neg[0] for neg in neg_context], dim=0),
-        #                            torch.cat([neg[1] for neg in neg_context], dim=0),
-        #                            torch.cat([neg[2] for neg in neg_context], dim=0))
-        #
-        # dists = self.euclidean_dist(word_fps, neg_fps)
-        # self_dist = self.remove_diag(self.euclidean_dist(word_fps, word_fps))
-        # correct_labels = self_dist.min(dim=-1)[1] + dists.shape[1]
-        # dists = torch.cat([dists, self_dist], dim=-1)
-        #
-        # return F.nll_loss(F.softmin(dists, dim=-1).log(), correct_labels)
-
-
-        # word_self = (torch.cat([neg[-1].max(dim=-1)[1] for neg in neg_context]) == sizes[0]).view(-1, dists.shape[1]).expand(dists.shape[0], -1)
-        #
-        # word_fps = self.w_embedding(*pos_context[0:-1])
-        # correct_labels = pos_context[-1].max(dim=-1)[1]
-        # correct_label = sizes[0]
-        # dists = []
-        # for i, neg in enumerate(neg_context):
-        #     neg_fps = self.w_embedding(*neg[0:-1])
-        #     if correct_label == i:
-        #         dist = self.remove_diag(self.euclidean_dist(word_fps, neg_fps))
-        #     else:
-        #         dist = self.euclidean_dist(word_fps, neg_fps)
-        # #     # dists.append(dist)
-        # #     # dist = self.euclidean_dist(word_fps, neg_fps)
-        # #     # dist = self.cosine_sim(word_fps, neg_fps)
-        #     dists.append(dist.min(dim=-1)[0])
-        # #
-        # dists = torch.cat(dists, dim=-1).view(correct_labels.shape + (-1,))
-        # dists = F.softmin(dists, dim=-1).log()
-        # return F.nll_loss(dists, correct_labels)
-
-        # pos_scores =
-        # neg_scores = self.euclidean_dist(word_fps, neg_fps)
-        #
-        # scores = F.softmin(torch.cat([pos_scores, neg_scores], dim=-1), dim=-1).log()
-        #
-        # pos_labels = self.remove_diag(word_labels.matmul(word_labels.t()))
-        # neg_labels = word_labels.matmul(neg_labels.t())
-        # labels = torch.cat([pos_labels, neg_labels], dim=-1).max(dim=-1)[1]
-        #
-        # return F.nll_loss(scores, labels)
-
-        # context_fps = self.c_embedding(*pos_context[0:-1])
-        # neg_fps = self.c_embedding(*neg_context[0:-1])
-
-        # iscore = F.logsigmoid(context_fps.matmul(word_fps.t()))
-        # iscore = iscore.sum() - iscore.diag().sum()
-        #
-        # oscore = F.logsigmoid(neg_fps.neg().matmul(word_fps.t())).sum()
-
-        # mask = np.ones((len(sizes), sizes.max()))
-        # for i, size in enumerate(sizes):
-        #     mask[i, size:] = 0
-        # mask = Variable(from_numpy(mask))
-        #
-        # # iscore = F.logsigmoid(torch.matmul(pos_fps, mol_fps.t()))
-        # iscore = F.logsigmoid(torch.bmm(pos_fps.view(mask.shape + (-1,)), mol_fps.unsqueeze(1).permute(0, 2, 1)).squeeze())
-        # # oscore = F.logsigmoid(torch.matmul(neg_fps.neg(), mol_fps.t()))
-        # oscore = F.logsigmoid(torch.bmm(neg_fps.view(mask.shape + (-1,)), mol_fps.unsqueeze(1).permute(0, 2, 1)).squeeze())
-        # iscore = torch.div(torch.mul(iscore, mask.float()).sum(dim=1), Variable(from_numpy(sizes)).float())
-        # oscore = torch.div(torch.mul(oscore, mask.float()).sum(dim=1), Variable(from_numpy(sizes)).float())
-        # return -1 * (iscore + oscore)
-
+        return self.classifier(self.bn(fps))
 
 class SkipGramModelDataset(Dataset):
 

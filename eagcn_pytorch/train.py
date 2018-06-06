@@ -11,9 +11,11 @@ from time import gmtime, strftime
 
 from tqdm import tqdm
 from tqdm import trange
+from scipy.stats import rankdata
+from sklearn.metrics import roc_auc_score
 
 # Training settings
-dataset = 'small_batch_test'  # 'tox21', 'hiv', 'pubchem_chembl', 'small_batch_test'
+dataset = 'hiv'  # 'tox21', 'hiv', 'pubchem_chembl', 'small_batch_test'
 EAGCN_structure = 'concate'  # 'concate', 'weighted_ave'
 write_file = True
 n_den1, n_den2 = 64, 32
@@ -305,6 +307,30 @@ def test_model(loader, model, tasks, reportFps=False):
             aucs.append(auc)
         return (aucs, sum(aucs) / len(aucs))
 
+# 1 is positive, 0 is negative
+def fast_auc(probs, classes):
+    pos_probs = probs[classes == 1]
+    neg_probs = probs[classes == 0]
+    n1 = len(pos_probs)
+    n2 = len(neg_probs)
+    r = rankdata(np.concatenate([pos_probs, neg_probs]))
+    return (sum(r[1:n1]) - n1 * (n1 + 1) / 2) / n1 / n2
+
+
+def test_model_auc(model, data_loader):
+    model.eval()
+    process_bar = tqdm(data_loader)
+    outputs = []
+    labels = []
+    for mols in process_bar:
+        mols = mol_to_input_label(mols)
+        outputs.append(model(mols).cpu().data.numpy())
+        labels.append(mols[-1].cpu().data.numpy())
+    outputs = np.concatenate(outputs)
+    labels = np.concatenate(labels)
+
+    return roc_auc_score(labels, outputs)
+
 
 def cosine_sim(A, B, eps=1e-8):
     dist_mat = torch.matmul(A, B.t())
@@ -361,7 +387,7 @@ def test_wrapper(model, train_loader, validation_loader):
     signal.signal(signal.SIGINT, signal_handler)
 
     tqdm.write("Testing Model:")
-    tqdm.write('Results: {}'.format(', '.join(map(str, test_sgn_model(model, train_loader, validation_loader)))))
+    tqdm.write('Results: {}'.format(', '.join(map(str, test_model_auc(model, validation_loader)))))
 
 
 def mol_to_input(mol):
@@ -433,7 +459,10 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
         process_bar = tqdm(train_loader)
         for mols in process_bar:
             optimizer.zero_grad()
-            loss = model(mol_to_input_label(mols))
+            mols = mol_to_input_label(mols)
+            outputs = model(mols)
+            weights = weight_func(BCE_weight, mols[-1])
+            loss = nn.CrossEntropyLoss(weight=weights)(outputs, mols[-1].long())
             tot_loss += loss.item()
             loss.backward()
             optimizer.step()
