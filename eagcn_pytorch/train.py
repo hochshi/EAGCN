@@ -431,7 +431,7 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
 
     x_all, edge_to_ix, edge_word_len, node_to_ix, node_word_len = embed_data(x_all, edge_vocab, node_vocab)
 
-    model = SkipGramModel(10, edge_to_ix, edge_word_len, node_to_ix, node_word_len, 2, batch_size)
+    model = SkipGramModel(10, edge_to_ix, edge_word_len, node_to_ix, node_word_len, 2, len(all_tasks))
 
     print("model has {} parameters".format(count_parameters(model)))
     if use_cuda:
