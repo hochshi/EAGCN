@@ -333,9 +333,7 @@ def test_model_auc(model, data_loader):
     pr_auc = auc(recall, precision)
     roc_auc = roc_auc_score(labels, outputs)
     aps = average_precision_score(labels, outputs)
-
-
-    return roc_auc, pr_auc, aps
+    return [roc_auc, pr_auc, aps]
 
 
 def cosine_sim(A, B, eps=1e-8):
@@ -445,7 +443,7 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
 
     model.apply(weights_init)
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
-    loss_func = nn.CrossEntropyLoss()
+    # loss_func = nn.CrossEntropyLoss()
 
     validation_acc_history = []
     acc_history = np.empty([4, 2, num_epochs])
@@ -468,7 +466,7 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
             optimizer.zero_grad()
             mols = mol_to_input_label(mols)
             outputs = model(mols)
-            loss = loss_func(outputs, mols[-1].squeeze().long())
+            loss = F.binary_cross_entropy_with_logits(outputs.view(-1), mols[-1].float().view(-1))
             tot_loss += loss.item()
             loss.backward()
             optimizer.step()
