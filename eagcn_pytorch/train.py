@@ -462,7 +462,7 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
             mols = mol_to_input_label(mols)
             outputs = model(mols)
             weights = weight_func(BCE_weight, mols[-1])
-            loss = nn.CrossEntropyLoss(weight=weights)(outputs, mols[-1].long())
+            loss = nn.CrossEntropyLoss(weight=weights)(outputs, mols[-1].squeeze().long())
             tot_loss += loss.item()
             loss.backward()
             optimizer.step()
