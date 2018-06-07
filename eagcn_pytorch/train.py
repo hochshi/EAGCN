@@ -134,7 +134,7 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
                             n_sgc2_1=n_sgc2_1, n_sgc2_2=n_sgc2_2, n_sgc2_3=n_sgc2_3, n_sgc2_4=n_sgc2_4,
                             n_sgc2_5=n_sgc2_5,
                             n_den1=n_den1, n_den2=n_den2,
-                            nclass=len(tasks)+1, dropout=dropout)
+                            nclass=len(tasks), dropout=dropout)
     else:
         model = Weighted_GCN(n_bfeat=n_bfeat, n_afeat=25,
                              n_sgc1_1 = n_sgc1_1, n_sgc1_2 = n_sgc1_2, n_sgc1_3= n_sgc1_3, n_sgc1_4 = n_sgc1_4, n_sgc1_5 = n_sgc1_5,
