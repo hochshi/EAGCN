@@ -151,8 +151,8 @@ class SkipGramMolEmbed(nn.Module):
         self.fp_len = fp_len
         self.edge_word_len = edge_word_len
         self.node_word_len = node_word_len
-        self.edge_embeddings = nn.Embedding(len(edge_to_ix), fp_len, sparse=False)
-        self.node_embeddings = nn.Embedding(len(node_to_ix), fp_len, sparse=False)
+        self.edge_embeddings = nn.Embedding(len(edge_to_ix), fp_len, sparse=True)
+        self.node_embeddings = nn.Embedding(len(node_to_ix), fp_len, sparse=True)
 
     def embed_edges(self, adjs, bfts):
         return self.edge_embeddings(bfts.view(-1)).mul(adjs.view(-1).unsqueeze(1).float())\

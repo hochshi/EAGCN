@@ -443,7 +443,8 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
         model.cuda()
 
     model.apply(weights_init)
-    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
+    # optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
+    optimizer = torch.optim.SparseAdam(model.parameters(), lr=learning_rate)
     # loss_func = nn.CrossEntropyLoss()
 
     validation_acc_history = []
