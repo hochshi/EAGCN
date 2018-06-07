@@ -891,8 +891,8 @@ def mol_collate_func_class(batch, max_size=None):
 
     return ([
         from_numpy(np.array(adj_list)).float().requires_grad_(False),
-        from_numpy(np.array(afm_list)).float().requires_grad_(False),
-        from_numpy(np.array(bft_list)).float().requires_grad_(False),
+        from_numpy(np.array(afm_list)).long().requires_grad_(False),
+        from_numpy(np.array(bft_list)).long().requires_grad_(False),
         from_numpy(np.array(label_list)).long().requires_grad_(False)
     ])
     # return ([from_numpy(np.array(adj_list)), from_numpy(np.array(afm_list)),
