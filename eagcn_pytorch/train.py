@@ -178,28 +178,28 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
 
         # report performance
         if True:
-            print("Calculating train precision and recall...")
-            tpre, trec, tspe, tacc = test_model(train_loader, model, tasks)
+            # print("Calculating train precision and recall...")
+            # tpre, trec, tspe, tacc = test_model(train_loader, model, tasks)
             print("Calculating validation precision and recall...")
-            vpre, vrec, vspe, vacc = test_model(validation_loader, model, tasks)
+            vpre, vrec, vspe = test_model(validation_loader, model, tasks)
             print(
                 'Epoch: [{}/{}], '
                 'Step: [{}/{}], '
                 'Loss: {},'
                 '\n'
-                'Train: Precision: {}, Recall: {}, fbeta_score: {}, Support: {}'
-                '\n'
-                'Validation: Precision: {}, Recall: {}, fbeta_score: {}, Support: {}'.format(
+                # 'Train: Precision: {}, Recall: {}, fbeta_score: {}, Support: {}'
+                # '\n'
+                'Validation: ROC AUC: {}, P-R AUC: {}, PAS: {}'.format(
                     epoch + 1, num_epochs, i + 1,
                     math.ceil(len_train / batch_size), tot_loss,
-                    tpre, trec, tspe, tacc,
-                    vpre, vrec, vspe, vacc
+                    # tpre, trec, tspe, tacc,
+                    vpre, vrec, vspe
                 ))
 
     print("Calculating train precision and recall...")
-    tpre, trec, tspe, tacc = test_model(test_loader, model, tasks)
+    tpre, trec, tspe = test_model(test_loader, model, tasks)
     print(
-        'Test Precision: {}, Recall: {}, fbeta_score: {}, Support: {}'.format(tpre, trec, tspe, tacc)
+        'Test ROC AUC: {}, P-R AUC: {}, PAS: {}'.format(tpre, trec, tspe)
     )
 
 tasks = all_tasks # [task]
