@@ -456,13 +456,15 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
     del x_all, y_all, target
 
     loss_hist = []
-    process_bar0 = trange(num_epochs)
+    # process_bar0 = trange(num_epochs)
     test_wrapper(model, train_loader, validation_loader)
-    for epoch in process_bar0:
+    # for epoch in process_bar0:
+    for epoch in range(num_epochs):
         tot_loss = 0
         model.train()
-        process_bar = tqdm(train_loader)
-        for mols in process_bar:
+        # process_bar = tqdm(train_loader)
+        # for mols in process_bar:
+        for mols in train_loader:
             optimizer.zero_grad()
             mols = mol_to_input_label(mols)
             outputs = model(mols)
