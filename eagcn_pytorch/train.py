@@ -98,7 +98,7 @@ def test_model(loader, model, tasks):
             conjAtt), Variable(ringAtt)
         # outputs = model(adj_batch, afm_batch, btf_batch, orderAtt_batch, aromAtt_batch, conjAtt_batch, ringAtt_batch)
         # pred_labels.append(F.log_softmax(outputs, dim=1).max(dim=1)[1].cpu().data.numpy())
-        outputs.append(model(adj_batch, afm_batch, btf_batch, orderAtt_batch, aromAtt_batch, conjAtt_batch, ringAtt_batch))
+        outputs.append(model(adj_batch, afm_batch, btf_batch, orderAtt_batch, aromAtt_batch, conjAtt_batch, ringAtt_batch).cpu().data.numpy())
         labels_arr.append(label_batch.squeeze(1).long().cpu().data.numpy())
 
     outputs = np.concatenate(outputs)
