@@ -467,7 +467,7 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
             mols = mol_to_input_label(mols)
             outputs = model(mols)
             loss = F.binary_cross_entropy_with_logits(outputs.view(-1), mols[-1].float().view(-1))
-            tot_loss += loss.item()
+            tot_loss += loss.cpu().item()
             loss.backward()
             optimizer.step()
         loss_hist.append(tot_loss)
