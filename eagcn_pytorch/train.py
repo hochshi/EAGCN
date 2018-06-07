@@ -90,7 +90,7 @@ def test_model(loader, model, tasks):
     true_labels = []
     pred_labels = []
     outputs = []
-    labels = []
+    labels_arr = []
 
     for adj, afm, btf, orderAtt, aromAtt, conjAtt, ringAtt, labels in loader:
         adj_batch, afm_batch, btf_batch, label_batch = Variable(adj), Variable(afm), Variable(btf), Variable(labels)
@@ -99,15 +99,15 @@ def test_model(loader, model, tasks):
         # outputs = model(adj_batch, afm_batch, btf_batch, orderAtt_batch, aromAtt_batch, conjAtt_batch, ringAtt_batch)
         # pred_labels.append(F.log_softmax(outputs, dim=1).max(dim=1)[1].cpu().data.numpy())
         outputs.append(model(adj_batch, afm_batch, btf_batch, orderAtt_batch, aromAtt_batch, conjAtt_batch, ringAtt_batch))
-        labels.append(label_batch.squeeze(1).long().cpu().data.numpy())
+        labels_arr.append(label_batch.squeeze(1).long().cpu().data.numpy())
 
     outputs = np.concatenate(outputs)
-    labels = np.concatenate(labels)
+    labels_arr = np.concatenate(labels_arr)
 
-    precision, recall, _ = precision_recall_curve(labels, outputs)
+    precision, recall, _ = precision_recall_curve(labels_arr, outputs)
     pr_auc = auc(recall, precision)
-    roc_auc = roc_auc_score(labels, outputs)
-    aps = average_precision_score(labels, outputs)
+    roc_auc = roc_auc_score(labels_arr, outputs)
+    aps = average_precision_score(labels_arr, outputs)
 
     model.train()
 
@@ -172,7 +172,7 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
             # weights = weight_func(BCE_weight, label_batch)
             # loss = nn.CrossEntropyLoss(weight=weights)(outputs, label_batch.squeeze(1).long())
             loss = F.binary_cross_entropy_with_logits(outputs.view(-1), label_batch.float().view(-1))
-            tot_loss += loss.data[0]
+            tot_loss += loss.cpu().item()
             loss.backward()
             optimizer.step()
 
