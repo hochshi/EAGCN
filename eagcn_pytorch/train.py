@@ -396,18 +396,19 @@ def test_wrapper(model, train_loader, validation_loader):
 
 def mol_to_input(mol):
     return (
-        Variable(mol[adj_pos]),
-        Variable(mol[afm_pos]),
-        Variable(mol[btf_pos])
+        mol[adj_pos],
+        mol[afm_pos],
+        mol[btf_pos]
     )
 
 
 def mol_to_input_label(mol):
+    return mol
     return (
-        Variable(mol[adj_pos]),
-        Variable(mol[afm_pos]),
-        Variable(mol[btf_pos]),
-        Variable(mol[labels_pos])
+        mol[adj_pos],
+        mol[afm_pos],
+        mol[btf_pos],
+        mol[labels_pos]
     )
 
 
@@ -435,7 +436,7 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
 
     x_all, edge_to_ix, edge_word_len, node_to_ix, node_word_len = embed_data(x_all, edge_vocab, node_vocab)
 
-    model = SkipGramModel(100, edge_to_ix, edge_word_len, node_to_ix, node_word_len, 2, len(all_tasks))
+    model = SkipGramModel(10, edge_to_ix, edge_word_len, node_to_ix, node_word_len, 2, len(all_tasks))
 
     print("model has {} parameters".format(count_parameters(model)))
     if use_cuda:
@@ -456,15 +457,13 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
     del x_all, y_all, target
 
     loss_hist = []
-    # process_bar0 = trange(num_epochs)
-    test_wrapper(model, train_loader, validation_loader)
-    # for epoch in process_bar0:
-    for epoch in range(num_epochs):
+    process_bar0 = trange(num_epochs)
+    # test_wrapper(model, train_loader, validation_loader)
+    for epoch in process_bar0:
         tot_loss = 0
         model.train()
-        # process_bar = tqdm(train_loader)
-        # for mols in process_bar:
-        for mols in train_loader:
+        process_bar = tqdm(train_loader)
+        for mols in process_bar:
             optimizer.zero_grad()
             mols = mol_to_input_label(mols)
             outputs = model(mols)

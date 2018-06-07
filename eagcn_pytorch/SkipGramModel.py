@@ -155,11 +155,13 @@ class SkipGramMolEmbed(nn.Module):
         self.node_embeddings = nn.Embedding(len(node_to_ix), fp_len, sparse=False)
 
     def embed_edges(self, adjs, bfts):
-        return self.edge_embeddings(bfts.view(-1)).mul(adjs.view(-1).unsqueeze(1).float()).view(bfts.shape + (-1,))
+        return self.edge_embeddings(bfts.view(-1)).mul(adjs.view(-1).unsqueeze(1).float())\
+            .view(bfts.shape + (-1,)).permute(0, 3, 2, 1).contiguous()
 
     def embed_nodes(self, adjs, afms):
         nz = adjs.max(dim=2)[0].float()
-        return self.node_embeddings(afms.view(-1)).mul(nz.view(-1).unsqueeze(1)).view(nz.shape + (-1,))
+        return self.node_embeddings(afms.view(-1)).mul(nz.view(-1).unsqueeze(1))\
+            .view(nz.shape + (-1,)).permute(0, 2, 1).contiguous()
 
     def get_next_node(self, adj_mat, node_data, edge_data):
         # Must remember to sum over the rows!!!
@@ -184,7 +186,7 @@ class SkipGramMolEmbed(nn.Module):
         return (edge_data-mean).div(var.sqrt()).mul(adjs_no_diag)
 
     def forward(self, adjs, afms, bfts):
-        adjs_no_diag = torch.clamp(adjs - Variable(from_numpy(np.eye(adjs.size()[1])).float()), min=0)
+        adjs_no_diag = torch.clamp(adjs - from_numpy(np.eye(adjs.size()[1])).float().requires_grad_(False), min=0)
 
         edge_data = self.embed_edges(adjs_no_diag, bfts)
         node_data = self.embed_nodes(adjs, afms)
@@ -192,16 +194,15 @@ class SkipGramMolEmbed(nn.Module):
         fps = list()
         fps.append(node_data)
 
-        # Very important sum over ROWS!!!
+        # Very important sum the rows!!!
         # TODO: Should I try a different mechanism in which edge data and node data are multiplied
         # but next level data is added? n1-(e1)-n2-(e2)-n3 turns into: (e1*n2)+(e2+n3)
         # or the other way around? (e1+n2)*(e2+n3)?
-        r1 = edge_data.mul(adjs_no_diag.unsqueeze(3).float()).mul(node_data.unsqueeze(1))
-        fps.append(r1.sum(dim=-3))
-        t1 = adjs_no_diag.bmm(adjs_no_diag).clamp(max=1) - Variable(from_numpy(np.eye(adjs.size()[1])).float())
-        r2 = r1.permute(0, 3, 1, 2).matmul(edge_data.permute(0, 3, 2, 1)).permute(0, 2, 3, 1).mul(
-            t1.float().unsqueeze(3)).mul(node_data.unsqueeze(1))
-        fps.append(r2.sum(dim=-3))
+        r1 = edge_data.mul(adjs_no_diag.unsqueeze(1).float()).mul(node_data.unsqueeze(-1))
+        fps.append(r1.sum(dim=-2))
+        t1 = adjs_no_diag.bmm(adjs_no_diag).clamp(max=1) - from_numpy(np.eye(adjs.size()[1])).float().requires_grad_(False)
+        # r2 = r1.matmul(edge_data).mul(t1.float().unsqueeze(1)).mul(node_data.unsqueeze(-1))
+        fps.append(r1.matmul(edge_data).mul(t1.float().unsqueeze(1)).mul(node_data.unsqueeze(-1)).sum(dim=-2))
 
         # fps = list()
         # fps.append(node_next)
@@ -209,7 +210,7 @@ class SkipGramMolEmbed(nn.Module):
         # for radius in range(self.radius):
         #     node_next = self.get_next_node(adj_mat, node_next, edge_data)
         #     fps.append(node_next)
-        return torch.cat(fps, dim=-1).sum(dim=-2)
+        return torch.cat(fps, dim=-2).sum(dim=-1)
 
 class SkipGramModel(nn.Module):
     """
