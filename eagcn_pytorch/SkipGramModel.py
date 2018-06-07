@@ -33,7 +33,7 @@ class NNMolEmbed(nn.Module):
         self.edge_embeddings = nn.Embedding(len(edge_to_ix), fp_len)
         self.node_embeddings = nn.Embedding(len(node_to_ix), fp_len)
 
-        self.summarize = nn.Conv2d(self.radius, 1, 1, bias=False)
+        # self.summarize = nn.Conv2d(self.radius, 1, 1, bias=False)
 
         self.conv = {}
 
@@ -227,7 +227,7 @@ class SkipGramModel(nn.Module):
         self.w_embedding = NNMolEmbed(fp_len, edge_to_ix, edge_word_len, node_to_ix, node_word_len, radius+1)
         self.init_emb()
         # self.loss = nn.BCEWithLogitsLoss()
-        self.bn = nn.BatchNorm1d(fp_len*(radius+1), affine=False)
+        self.bn = nn.BatchNorm1d(fp_len*(radius+1), affine=True)
         self.classifier = nn.Linear(fp_len*(radius+1), nclass)
 
     def init_emb(self):

@@ -435,7 +435,7 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
 
     x_all, edge_to_ix, edge_word_len, node_to_ix, node_word_len = embed_data(x_all, edge_vocab, node_vocab)
 
-    model = SkipGramModel(10, edge_to_ix, edge_word_len, node_to_ix, node_word_len, 2, len(all_tasks))
+    model = SkipGramModel(100, edge_to_ix, edge_word_len, node_to_ix, node_word_len, 2, len(all_tasks))
 
     print("model has {} parameters".format(count_parameters(model)))
     if use_cuda:
@@ -457,7 +457,7 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
 
     loss_hist = []
     process_bar0 = trange(num_epochs)
-    # test_wrapper(model, train_loader, validation_loader)
+    test_wrapper(model, train_loader, validation_loader)
     for epoch in process_bar0:
         tot_loss = 0
         model.train()
@@ -474,8 +474,8 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
         tqdm.write('Epoch: {}, Loss: {}'.format(epoch, tot_loss))
 
         # report performance
-        # if epoch > 0 and 0 == epoch % 10:
-        #     test_wrapper(model, train_loader, validation_loader)
+        if epoch > 0 and 0 == epoch % 10:
+            test_wrapper(model, train_loader, validation_loader)
     tqdm.write('Loss history: {}'.format(', '.join(map(str, loss_hist))))
     test_wrapper(model, train_loader, validation_loader)
     test_wrapper(model, train_loader, test_loader)
