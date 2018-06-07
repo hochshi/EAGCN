@@ -187,13 +187,8 @@ class SkipGramMolEmbed(nn.Module):
         adjs_no_diag = torch.clamp(adjs - Variable(from_numpy(np.eye(adjs.size()[1])).long()), min=0)
 
         edge_data = self.embed_edges(adjs_no_diag, bfts)
-        node_data = self.batch_norm_nodes(self.embed_nodes(adjs, afms), adjs - adjs_no_diag)
+        node_data = self.embed_nodes(adjs, afms)
 
-
-
-        node_current = node_data
-        adj_mat = adjs_no_diag
-        node_next = node_current
         fps = list()
         fps.append(node_data)
 
@@ -202,11 +197,11 @@ class SkipGramMolEmbed(nn.Module):
         # but next level data is added? n1-(e1)-n2-(e2)-n3 turns into: (e1*n2)+(e2+n3)
         # or the other way around? (e1+n2)*(e2+n3)?
         r1 = edge_data.mul(adjs_no_diag.unsqueeze(3).float()).mul(node_data.unsqueeze(1))
-        fps.append(self.batch_norm_nodes(r1.sum(dim=-3), adjs - adjs_no_diag))
+        fps.append(r1.sum(dim=-3))
         t1 = adjs_no_diag.bmm(adjs_no_diag).clamp(max=1) - Variable(from_numpy(np.eye(adjs.size()[1])).long())
         r2 = r1.permute(0, 3, 1, 2).matmul(edge_data.permute(0, 3, 2, 1)).permute(0, 2, 3, 1).mul(
             t1.float().unsqueeze(3)).mul(node_data.unsqueeze(1))
-        fps.append(self.batch_norm_nodes(r2.sum(dim=-3), adjs - adjs_no_diag))
+        fps.append(r2.sum(dim=-3))
 
         # fps = list()
         # fps.append(node_next)
@@ -226,9 +221,9 @@ class SkipGramModel(nn.Module):
 
     def __init__(self, fp_len, edge_to_ix, edge_word_len, node_to_ix, node_word_len, radius, nclass):
         super(SkipGramModel, self).__init__()
-        # self.w_embedding = SkipGramMolEmbed(fp_len, edge_to_ix, edge_word_len, node_to_ix, node_word_len, radius+1)
+        self.w_embedding = SkipGramMolEmbed(fp_len, edge_to_ix, edge_word_len, node_to_ix, node_word_len, radius+1)
         # self.c_embedding = SkipGramMolEmbed(fp_len, edge_to_ix, edge_word_len, node_to_ix, node_word_len, radius)
-        self.w_embedding = NNMolEmbed(fp_len, edge_to_ix, edge_word_len, node_to_ix, node_word_len, radius+1)
+        # self.w_embedding = NNMolEmbed(fp_len, edge_to_ix, edge_word_len, node_to_ix, node_word_len, radius+1)
         self.init_emb()
         # self.loss = nn.BCEWithLogitsLoss()
         self.bn = nn.BatchNorm1d(fp_len*(radius+1), affine=True)
