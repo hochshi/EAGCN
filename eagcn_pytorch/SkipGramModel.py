@@ -86,9 +86,13 @@ class NNMolEmbed(nn.Module):
         return self.conv[('edge', layer)](edge_data) + edge_data
 
     def get_neighbor_act(self, adj_mat, node_data, edge_data, layer):
-        lna = torch.mul(adj_mat.unsqueeze(1).expand(-1, self.fp_len, -1, -1), node_data.unsqueeze(3))
-        lnb = torch.mul(adj_mat.unsqueeze(1).expand((-1, self.fp_len, -1, -1)), edge_data)
-        ln = torch.cat((lna, lnb), dim=1)
+        # lna = torch.mul(adj_mat.unsqueeze(1).expand(-1, self.fp_len, -1, -1), node_data.unsqueeze(3))
+        # lnb = torch.mul(adj_mat.unsqueeze(1).expand((-1, self.fp_len, -1, -1)), edge_data)
+        # ln = torch.cat((lna, lnb), dim=1)
+        ln = torch.cat((
+            torch.mul(adj_mat.unsqueeze(1).expand(-1, self.fp_len, -1, -1), node_data.unsqueeze(3)),
+            torch.mul(adj_mat.unsqueeze(1).expand((-1, self.fp_len, -1, -1)), edge_data)
+        ), dim=1)
         att = self.conv[('neighbor', 'att', layer)](ln).sum(dim=2)
         act = self.conv[('neighbor', 'act', layer)](ln).sum(dim=2)
         return (att, act)
