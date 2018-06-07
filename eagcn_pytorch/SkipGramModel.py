@@ -184,7 +184,7 @@ class SkipGramMolEmbed(nn.Module):
         return (edge_data-mean).div(var.sqrt()).mul(adjs_no_diag)
 
     def forward(self, adjs, afms, bfts):
-        adjs_no_diag = torch.clamp(adjs - Variable(from_numpy(np.eye(adjs.size()[1])).long()), min=0)
+        adjs_no_diag = torch.clamp(adjs - Variable(from_numpy(np.eye(adjs.size()[1])).float()), min=0)
 
         edge_data = self.embed_edges(adjs_no_diag, bfts)
         node_data = self.embed_nodes(adjs, afms)
@@ -198,7 +198,7 @@ class SkipGramMolEmbed(nn.Module):
         # or the other way around? (e1+n2)*(e2+n3)?
         r1 = edge_data.mul(adjs_no_diag.unsqueeze(3).float()).mul(node_data.unsqueeze(1))
         fps.append(r1.sum(dim=-3))
-        t1 = adjs_no_diag.bmm(adjs_no_diag).clamp(max=1) - Variable(from_numpy(np.eye(adjs.size()[1])).long())
+        t1 = adjs_no_diag.bmm(adjs_no_diag).clamp(max=1) - Variable(from_numpy(np.eye(adjs.size()[1])).float())
         r2 = r1.permute(0, 3, 1, 2).matmul(edge_data.permute(0, 3, 2, 1)).permute(0, 2, 3, 1).mul(
             t1.float().unsqueeze(3)).mul(node_data.unsqueeze(1))
         fps.append(r2.sum(dim=-3))
