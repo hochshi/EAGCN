@@ -153,15 +153,22 @@ class SkipGramMolEmbed(nn.Module):
         self.node_word_len = node_word_len
         self.edge_embeddings = nn.Embedding(len(edge_to_ix), fp_len, sparse=False)
         self.node_embeddings = nn.Embedding(len(node_to_ix), fp_len, sparse=False)
+        self.bl1 = nn.Bilinear(fp_len, fp_len, fp_len, bias=False)
+        self.bl2 = nn.Bilinear(fp_len, fp_len, fp_len, bias=False)
+        # self.bl3 = nn.Bilinear(fp_len, fp_len, fp_len, bias=False)
 
     def embed_edges(self, adjs, bfts):
-        return self.edge_embeddings(bfts.view(-1)).mul(adjs.view(-1).unsqueeze(1).float())\
-            .view(bfts.shape + (-1,)).permute(0, 3, 2, 1).contiguous()
+        # return self.edge_embeddings(bfts.view(-1)).mul(adjs.view(-1).unsqueeze(1).float())\
+        #     .view(bfts.shape + (-1,)).permute(0, 3, 2, 1).contiguous()
+        return self.edge_embeddings(bfts.view(-1)).mul(adjs.view(-1).unsqueeze(1).float()) \
+                .view(bfts.shape + (-1,)).contiguous()
 
     def embed_nodes(self, adjs, afms):
         nz = adjs.max(dim=2)[0].float()
-        return self.node_embeddings(afms.view(-1)).mul(nz.view(-1).unsqueeze(1))\
-            .view(nz.shape + (-1,)).permute(0, 2, 1).contiguous()
+        # return self.node_embeddings(afms.view(-1)).mul(nz.view(-1).unsqueeze(1))\
+        #     .view(nz.shape + (-1,)).permute(0, 2, 1).contiguous()
+        return self.node_embeddings(afms.view(-1)).mul(nz.view(-1).unsqueeze(1)) \
+            .view(nz.shape + (-1,)).contiguous()
 
     def get_next_node(self, adj_mat, node_data, edge_data):
         # Must remember to sum over the rows!!!
@@ -188,12 +195,27 @@ class SkipGramMolEmbed(nn.Module):
     def forward(self, adjs, afms, bfts):
         adjs_no_diag = torch.clamp(adjs - from_numpy(np.eye(adjs.size()[1])).float().requires_grad_(False), min=0)
 
-        edge_data = self.embed_edges(adjs_no_diag, bfts)
-        node_data = self.embed_nodes(adjs, afms)
+        edge_data = F.normalize(self.embed_edges(adjs_no_diag, bfts), dim=-1)
+        node_data = F.normalize(self.embed_nodes(adjs, afms), dim=-1)
 
         fps = list()
         fps.append(node_data)
 
+        node_data = node_data.unsqueeze(2).expand(-1, -1, edge_data.shape[2], -1).contiguous()
+
+        r1 = F.normalize(self.bl1(edge_data, node_data), dim=-1)
+        fps.append(r1.sum(dim=-3))
+        t1 = adjs_no_diag.bmm(adjs_no_diag).clamp(max=1) - from_numpy(np.eye(adjs.size()[1])).float().requires_grad_(
+            False)
+        # r2 = F.normalize(self.bl3(F.normalize(self.bl2(edge_data, r1), dim=-1), node_data), dim=-1)\
+        #     .mul(t1.float().unsqueeze(-1))
+        r2 = F.normalize(self.bl2(F.normalize(r1.permute(0, 3, 1, 2).matmul(edge_data.permute(0, 3, 1, 2)).permute(0, 2, 3, 1).mul(t1.unsqueeze(-1)), dim=-1), node_data), dim=-1)
+        fps.append(r2.sum(dim=-3))
+        return torch.cat(fps, dim=-1).sum(dim=-2)
+
+        """
+        This is working quite well - 
+        trying to improve by using bilinear layers instead of multiplying directly the node and edge data
         # Very important sum the rows!!!
         # TODO: Should I try a different mechanism in which edge data and node data are multiplied
         # but next level data is added? n1-(e1)-n2-(e2)-n3 turns into: (e1*n2)+(e2+n3)
@@ -203,7 +225,6 @@ class SkipGramMolEmbed(nn.Module):
         t1 = adjs_no_diag.bmm(adjs_no_diag).clamp(max=1) - from_numpy(np.eye(adjs.size()[1])).float().requires_grad_(False)
         # r2 = r1.matmul(edge_data).mul(t1.float().unsqueeze(1)).mul(node_data.unsqueeze(-1))
         fps.append(r1.matmul(edge_data).mul(t1.float().unsqueeze(1)).mul(node_data.unsqueeze(-1)).sum(dim=-2))
-
         # fps = list()
         # fps.append(node_next)
         #
@@ -211,6 +232,7 @@ class SkipGramMolEmbed(nn.Module):
         #     node_next = self.get_next_node(adj_mat, node_next, edge_data)
         #     fps.append(node_next)
         return torch.cat(fps, dim=-2).sum(dim=-1)
+        """
 
 class SkipGramModel(nn.Module):
     """
