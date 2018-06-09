@@ -156,6 +156,9 @@ class SkipGramMolEmbed(nn.Module):
         self.bl1 = nn.Bilinear(fp_len, fp_len, fp_len, bias=False)
         self.bl2 = nn.Bilinear(fp_len, fp_len, fp_len, bias=False)
         # self.bl3 = nn.Bilinear(fp_len, fp_len, fp_len, bias=False)
+        self.conv0 = nn.Conv2d(fp_len, fp_len, kernel_size=1, groups=lid(fp_len))
+        self.conv1 = nn.Conv2d(fp_len, fp_len, kernel_size=1, groups=lid(fp_len))
+        self.conv2 = nn.Conv2d(fp_len, fp_len, kernel_size=1, groups=lid(fp_len))
 
     def embed_edges(self, adjs, bfts):
         # return self.edge_embeddings(bfts.view(-1)).mul(adjs.view(-1).unsqueeze(1).float())\
@@ -199,19 +202,22 @@ class SkipGramMolEmbed(nn.Module):
         node_data = F.normalize(self.embed_nodes(adjs, afms), dim=-1)
 
         fps = list()
-        fps.append(node_data)
+        # fps.append(node_data)
 
         node_data = node_data.unsqueeze(2).expand(-1, -1, edge_data.shape[2], -1).contiguous()
+        fps.append(self.conv0(node_data.permute(0, 3, 1, 2)).sum(dim=-2))
 
         r1 = F.normalize(self.bl1(edge_data, node_data), dim=-1)
-        fps.append(r1.sum(dim=-3))
+        # fps.append(r1.sum(dim=-3))
+        fps.append(self.conv1(r1.permute(0, 3, 1, 2)).sum(dim=-2))
         t1 = adjs_no_diag.bmm(adjs_no_diag).clamp(max=1) - from_numpy(np.eye(adjs.size()[1])).float().requires_grad_(
             False)
         # r2 = F.normalize(self.bl3(F.normalize(self.bl2(edge_data, r1), dim=-1), node_data), dim=-1)\
         #     .mul(t1.float().unsqueeze(-1))
         r2 = F.normalize(self.bl2(F.normalize(r1.permute(0, 3, 1, 2).matmul(edge_data.permute(0, 3, 1, 2)).permute(0, 2, 3, 1).mul(t1.unsqueeze(-1)), dim=-1), node_data), dim=-1)
-        fps.append(r2.sum(dim=-3))
-        return torch.cat(fps, dim=-1).sum(dim=-2)
+        # fps.append(r2.sum(dim=-3))
+        fps.append(self.conv2(r2.permute(0, 3, 1, 2)).sum(dim=-2))
+        return torch.cat(fps, dim=-2).sum(dim=-1)
 
         """
         This is working quite well - 
