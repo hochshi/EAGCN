@@ -213,7 +213,7 @@ class SkipGramMolEmbed(nn.Module):
         #     .mul(t1.float().unsqueeze(-1))
         r2 = F.normalize(self.bl2(F.normalize(r1.permute(0, 3, 1, 2).matmul(edge_data.permute(0, 3, 1, 2)).permute(0, 2, 3, 1).mul(t1.unsqueeze(-1)), dim=-1), node_data), dim=-1)
         # fps.append(r2.sum(dim=-3))
-        return self.bl1_2(fps[1], r2.sum(dim=-3))
+        return self.bl1_2(fps[1], r2.sum(dim=-3)).sum(dim=-2)
         # return torch.cat(fps, dim=-2).sum(dim=-1)
 
         """
