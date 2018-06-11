@@ -969,16 +969,16 @@ def set_weight(y_all):
     return(pos_dic)
 
 def weights_init(m):
-    # pass
+    pass
     classname = m.__class__.__name__
     if classname.find('Conv') != -1:
     #     # m.weight.data.fill_(1.0)
         m.weight.data.normal_(0.0, 0.02)
         return
     if classname.find('BatchNorm') != -1:
-        m.weight.data.normal_(1.0, 0.02)
+        # m.weight.data.normal_(1.0, 0.02)
     #     # m.weight.data.fill_(1.0)
-        m.bias.data.fill_(0)
+    #     m.bias.data.fill_(0)
         return
     if classname.find('Conv2d') != -1:
         m.weight.data.fill_(1.0)

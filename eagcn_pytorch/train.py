@@ -45,7 +45,7 @@ if dataset == 'tox21':
 if dataset == 'hiv':
     n_sgc1_1, n_sgc1_2, n_sgc1_3, n_sgc1_4, n_sgc1_5 = 10, 10, 10, 10, 10
     n_sgc2_1, n_sgc2_2, n_sgc2_3, n_sgc2_4, n_sgc2_5 = 60, 20, 20, 20, 20
-    batch_size = 64
+    batch_size = 256
     weight_decay = 0.00001  # L-2 Norm
     dropout = 0.3
     random_state = 1
@@ -436,7 +436,7 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
 
     x_all, edge_to_ix, edge_word_len, node_to_ix, node_word_len = embed_data(x_all, edge_vocab, node_vocab)
 
-    model = SkipGramModel(5, edge_to_ix, edge_word_len, node_to_ix, node_word_len, 2, len(all_tasks))
+    model = SkipGramModel(15, edge_to_ix, edge_word_len, node_to_ix, node_word_len, 2, len(all_tasks))
 
     print("model has {} parameters".format(count_parameters(model)))
     if use_cuda:

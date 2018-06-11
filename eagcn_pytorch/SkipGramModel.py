@@ -153,11 +153,11 @@ class SkipGramMolEmbed(nn.Module):
         self.node_word_len = node_word_len
         self.edge_embeddings = nn.Embedding(len(edge_to_ix), e_len, sparse=False)
         self.node_embeddings = nn.Embedding(len(node_to_ix), e_len, sparse=False)
-        # self.bl1 = nn.Bilinear(fp_len, fp_len, fp_len, bias=False)
-        # self.bl2 = nn.Bilinear(fp_len, fp_len, fp_len, bias=False)
-        # self.bl0_1 = nn.Bilinear(fp_len, fp_len, fp_len, bias=False)
-        # self.bl1_2 = nn.Bilinear(fp_len, fp_len, fp_len, bias=False)
-        self.reduceconv = nn.Conv1d(e_len ** (radius * 2 + 1), out_len, kernel_size=1, groups=gcd(e_len ** (radius * 2 + 1), out_len))
+        self.bl1_edge = nn.Bilinear(e_len, e_len, e_len, bias=False)
+        self.bl1_node = nn.Bilinear(e_len, e_len, e_len, bias=False)
+        self.bl2_edge = nn.Bilinear(e_len, e_len, e_len, bias=False)
+        self.bl2_node = nn.Bilinear(e_len, e_len, e_len, bias=False)
+        # self.reduceconv = nn.Conv1d(e_len ** (radius * 2 + 1), out_len, kernel_size=1, groups=gcd(e_len ** (radius * 2 + 1), out_len))
 
 
     def embed_edges(self, adjs, bfts):
@@ -195,7 +195,7 @@ class SkipGramMolEmbed(nn.Module):
         var = edge_data.pow(2).sum().div(adjs_no_diag.sum()) - mean.pow(2) + eps
         return (edge_data-mean).div(var.sqrt()).mul(adjs_no_diag)
 
-    def forward(self, adjs, afms, bfts):
+    def forward2(self, adjs, afms, bfts):
         adjs_no_diag = torch.clamp(adjs - from_numpy(np.eye(adjs.size()[1])).float().requires_grad_(False), min=0)
 
         edge_data = self.embed_edges(adjs_no_diag, bfts)
@@ -248,8 +248,42 @@ class SkipGramMolEmbed(nn.Module):
         #     .view(edge_data.shape[:-1] + (-1,))
 
 
+    def forward(self, adjs, afms, bfts):
+        adjs_no_diag = torch.clamp(adjs - from_numpy(np.eye(adjs.size()[1])).float().requires_grad_(False), min=0)
 
-    def forward2(self, adjs, afms, bfts):
+        edge_data = self.embed_edges(adjs_no_diag, bfts)
+        node_data = self.embed_nodes(adjs, afms)
+
+        out = list()
+        out.append(node_data.sum(dim=-2))
+
+        fps = node_data.unsqueeze(2).expand(-1, -1, node_data.shape[1], -1).contiguous()
+        nodes = node_data.unsqueeze(1).expand(-1, node_data.shape[1], -1, -1).contiguous()
+
+        for i in range(self.radius):
+            # fps = self.bl1_edge(fps, edge_data)
+            # fps = self.bl1_node(fps, nodes)
+            bl_node = getattr(self, 'bl{}_node'.format(i+1))
+            bl_edge = getattr(self, 'bl{}_edge'.format(i+1))
+            fps = bl_node(bl_edge(fps, edge_data), nodes)
+            if 0 == i:
+                out.append(fps.sum(dim=-2).div(adjs_no_diag.sum(dim=-2).unsqueeze(-1) + 1e-6).sum(dim=-2))
+            else:
+                out.append(fps.sum(dim=-2).div((adjs_no_diag.bmm(adjs_no_diag).clamp(max=1) - adjs).clamp(min=0)
+                                               .sum(dim=-2).unsqueeze(-1) + 1e-6).sum(dim=-2))
+            if i+1 < self.radius:
+                fps = fps.permute(0, 3, 1, 2).matmul(adjs_no_diag.unsqueeze(1))\
+                    .mul((1 - adjs).unsqueeze(1).clamp(min=0)).permute(0, 2, 3, 1).contiguous()
+                edge_data = edge_data.permute(0, 3, 1, 2).matmul(adjs_no_diag.unsqueeze(1))\
+                    .mul((1 - adjs).unsqueeze(1).clamp(min=0)).permute(0, 2, 3, 1).contiguous()
+        return torch.cat([
+            torch.cat(out, dim=-1).div((adjs-adjs_no_diag).sum(dim=-2).sum(dim=-1).unsqueeze(-1)),
+            adjs_no_diag.sum(dim=-1).sum(dim=-1).unsqueeze(-1) / 2,
+            (adjs - adjs_no_diag).sum(dim=-1).sum(dim=-1).unsqueeze(-1)
+        ], dim=-1)
+
+
+    def forward3(self, adjs, afms, bfts):
         adjs_no_diag = torch.clamp(adjs - from_numpy(np.eye(adjs.size()[1])).float().requires_grad_(False), min=0)
 
         edge_data = F.normalize(self.embed_edges(adjs_no_diag, bfts), dim=-1)
@@ -309,8 +343,8 @@ class SkipGramModel(nn.Module):
         # self.loss = nn.BCEWithLogitsLoss()
         # self.bn = nn.BatchNorm1d(fp_len*(radius+1), affine=True)
         # self.classifier = nn.Linear(fp_len*(radius+1), nclass)
-        self.bn = nn.BatchNorm1d(50+2, affine=True)
-        self.classifier = nn.Linear(50+2, nclass)
+        self.bn = nn.BatchNorm1d(fp_len*(radius+1)+2, affine=True)
+        self.classifier = nn.Linear(fp_len*(radius+1)+2, nclass)
 
     def init_emb(self):
         initrange = 0.5 / self.w_embedding.fp_len
