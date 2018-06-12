@@ -256,7 +256,7 @@ class SkipGramMolEmbed(nn.Module):
         node_data = F.normalize(self.embed_nodes(adjs, afms), dim=-1)
 
         out = list()
-        out.append(F.normalize(node_data.sum(dim=-2).div(mols_sizes), dim=-1))
+        out.append(F.normalize(node_data.sum(dim=-2), dim=-1))
 
         fps = node_data.unsqueeze(2).expand(-1, -1, node_data.shape[1], -1).contiguous()
         nodes = node_data.unsqueeze(1).expand(-1, node_data.shape[1], -1, -1).contiguous()
@@ -269,17 +269,16 @@ class SkipGramMolEmbed(nn.Module):
             bl_edge = getattr(self, 'bl{}_edge'.format(i+1))
             fps = F.normalize(bl_node(F.normalize(bl_edge(fps, edge_data), dim=-1), nodes), dim=-1)
             if 0 == i:
-                out.append(F.normalize(fps.sum(dim=-2).div(adjs_no_diag.sum(dim=-2).unsqueeze(-1) + 1e-6).sum(dim=-2).div(mols_sizes), dim=-1))
+                out.append(F.normalize(fps.sum(dim=-2).sum(dim=-2), dim=-1))
             else:
-                out.append(F.normalize(fps.sum(dim=-2).div((adjs_no_diag.bmm(adjs_no_diag).clamp(max=1) - adjs).clamp(min=0)
-                                               .sum(dim=-2).unsqueeze(-1) + 1e-6).sum(dim=-2).div(mols_sizes), dim=-1))
+                out.append(F.normalize(fps.sum(dim=-2).sum(dim=-2), dim=-1))
             if i+1 < self.radius:
                 fps = fps.permute(0, 3, 1, 2).matmul(adjs_no_diag.unsqueeze(1))\
                     .mul((1 - adjs).unsqueeze(1).clamp(min=0)).permute(0, 2, 3, 1).contiguous()
                 edge_data = edge_data.permute(0, 3, 1, 2).matmul(adjs_no_diag.unsqueeze(1))\
                     .mul((1 - adjs).unsqueeze(1).clamp(min=0)).permute(0, 2, 3, 1).contiguous()
         return torch.cat([
-            F.normalize(torch.cat(out, dim=-1), dim=-1),
+            torch.cat(out, dim=-1),
             adjs_no_diag.sum(dim=-1).sum(dim=-1).unsqueeze(-1) / 2,
             mols_sizes
         ], dim=-1)
@@ -349,6 +348,7 @@ class SkipGramModel(nn.Module):
         self.init_emb()
 
     def init_emb(self):
+        return
         # initrange = 0.5 / self.w_embedding.fp_len
         initrange = 0.25
         self.w_embedding.edge_embeddings.weight.data.uniform_(-initrange, initrange)
