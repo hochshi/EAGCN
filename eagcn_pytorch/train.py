@@ -45,7 +45,7 @@ if dataset == 'tox21':
 if dataset == 'hiv':
     n_sgc1_1, n_sgc1_2, n_sgc1_3, n_sgc1_4, n_sgc1_5 = 10, 10, 10, 10, 10
     n_sgc2_1, n_sgc2_2, n_sgc2_3, n_sgc2_4, n_sgc2_5 = 60, 20, 20, 20, 20
-    batch_size = 256
+    batch_size = 64
     weight_decay = 0.00001  # L-2 Norm
     dropout = 0.3
     random_state = 1

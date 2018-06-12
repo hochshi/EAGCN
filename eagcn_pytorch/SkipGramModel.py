@@ -250,36 +250,38 @@ class SkipGramMolEmbed(nn.Module):
 
     def forward(self, adjs, afms, bfts):
         adjs_no_diag = torch.clamp(adjs - from_numpy(np.eye(adjs.size()[1])).float().requires_grad_(False), min=0)
+        mols_sizes = (adjs - adjs_no_diag).sum(dim=-2).sum(dim=-1).unsqueeze(-1)
 
-        edge_data = self.embed_edges(adjs_no_diag, bfts)
-        node_data = self.embed_nodes(adjs, afms)
+        edge_data = F.normalize(self.embed_edges(adjs_no_diag, bfts), dim=-1)
+        node_data = F.normalize(self.embed_nodes(adjs, afms), dim=-1)
 
         out = list()
-        out.append(node_data.sum(dim=-2))
+        out.append(F.normalize(node_data.sum(dim=-2).div(mols_sizes), dim=-1))
 
         fps = node_data.unsqueeze(2).expand(-1, -1, node_data.shape[1], -1).contiguous()
         nodes = node_data.unsqueeze(1).expand(-1, node_data.shape[1], -1, -1).contiguous()
+
 
         for i in range(self.radius):
             # fps = self.bl1_edge(fps, edge_data)
             # fps = self.bl1_node(fps, nodes)
             bl_node = getattr(self, 'bl{}_node'.format(i+1))
             bl_edge = getattr(self, 'bl{}_edge'.format(i+1))
-            fps = bl_node(bl_edge(fps, edge_data), nodes)
+            fps = F.normalize(bl_node(F.normalize(bl_edge(fps, edge_data), dim=-1), nodes), dim=-1)
             if 0 == i:
-                out.append(fps.sum(dim=-2).div(adjs_no_diag.sum(dim=-2).unsqueeze(-1) + 1e-6).sum(dim=-2))
+                out.append(F.normalize(fps.sum(dim=-2).div(adjs_no_diag.sum(dim=-2).unsqueeze(-1) + 1e-6).sum(dim=-2).div(mols_sizes), dim=-1))
             else:
-                out.append(fps.sum(dim=-2).div((adjs_no_diag.bmm(adjs_no_diag).clamp(max=1) - adjs).clamp(min=0)
-                                               .sum(dim=-2).unsqueeze(-1) + 1e-6).sum(dim=-2))
+                out.append(F.normalize(fps.sum(dim=-2).div((adjs_no_diag.bmm(adjs_no_diag).clamp(max=1) - adjs).clamp(min=0)
+                                               .sum(dim=-2).unsqueeze(-1) + 1e-6).sum(dim=-2).div(mols_sizes), dim=-1))
             if i+1 < self.radius:
                 fps = fps.permute(0, 3, 1, 2).matmul(adjs_no_diag.unsqueeze(1))\
                     .mul((1 - adjs).unsqueeze(1).clamp(min=0)).permute(0, 2, 3, 1).contiguous()
                 edge_data = edge_data.permute(0, 3, 1, 2).matmul(adjs_no_diag.unsqueeze(1))\
                     .mul((1 - adjs).unsqueeze(1).clamp(min=0)).permute(0, 2, 3, 1).contiguous()
         return torch.cat([
-            torch.cat(out, dim=-1).div((adjs-adjs_no_diag).sum(dim=-2).sum(dim=-1).unsqueeze(-1)),
+            F.normalize(torch.cat(out, dim=-1), dim=-1),
             adjs_no_diag.sum(dim=-1).sum(dim=-1).unsqueeze(-1) / 2,
-            (adjs - adjs_no_diag).sum(dim=-1).sum(dim=-1).unsqueeze(-1)
+            mols_sizes
         ], dim=-1)
 
 
@@ -339,20 +341,33 @@ class SkipGramModel(nn.Module):
         self.w_embedding = SkipGramMolEmbed(fp_len, edge_to_ix, edge_word_len, node_to_ix, node_word_len, radius, 50)
         # self.c_embedding = SkipGramMolEmbed(fp_len, edge_to_ix, edge_word_len, node_to_ix, node_word_len, radius)
         # self.w_embedding = NNMolEmbed(fp_len, edge_to_ix, edge_word_len, node_to_ix, node_word_len, radius+1)
-        self.init_emb()
         # self.loss = nn.BCEWithLogitsLoss()
         # self.bn = nn.BatchNorm1d(fp_len*(radius+1), affine=True)
         # self.classifier = nn.Linear(fp_len*(radius+1), nclass)
         self.bn = nn.BatchNorm1d(fp_len*(radius+1)+2, affine=True)
         self.classifier = nn.Linear(fp_len*(radius+1)+2, nclass)
+        self.init_emb()
 
     def init_emb(self):
-        initrange = 0.5 / self.w_embedding.fp_len
-        # self.w_embedding.edge_embeddings.weight.data.uniform_(-initrange, initrange)
-        # self.w_embedding.node_embeddings.weight.data.uniform_(-initrange, initrange)
+        # initrange = 0.5 / self.w_embedding.fp_len
+        initrange = 0.25
+        self.w_embedding.edge_embeddings.weight.data.uniform_(-initrange, initrange)
+        self.w_embedding.node_embeddings.weight.data.uniform_(-initrange, initrange)
+        #
+        self.w_embedding.bl1_node.weight.data.uniform_(-initrange, initrange)
+        self.w_embedding.bl1_edge.weight.data.uniform_(-initrange, initrange)
+        self.w_embedding.bl2_edge.weight.data.uniform_(-initrange, initrange)
+        self.w_embedding.bl2_node.weight.data.uniform_(-initrange, initrange)
 
-        self.w_embedding.edge_embeddings.weight.data.normal_(1, 0.05)
-        self.w_embedding.node_embeddings.weight.data.normal_(1, 0.05)
+        self.bn.weight.data.normal_(1, initrange)
+        self.bn.bias.data.fill_(0)
+
+        # self.w_embedding.edge_embeddings.weight.data.normal_(0, 0.05)
+        # self.w_embedding.node_embeddings.weight.data.normal_(0, 0.05)
+        # self.w_embedding.bl1_node.weight.data.normal_(0, 0.05)
+        # self.w_embedding.bl1_edge.weight.data.normal_(0, 0.05)
+        # self.w_embedding.bl2_edge.weight.data.normal_(0, 0.05)
+        # self.w_embedding.bl2_node.weight.data.normal_(0, 0.05)
 
         # self.c_embedding.edge_embeddings.weight.data.uniform_(-0, 0)
         # self.c_embedding.node_embeddings.weight.data.uniform_(-0, 0)
