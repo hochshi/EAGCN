@@ -166,6 +166,7 @@ def load_freesolv(path='../data/', dataset = 'SAMPL.csv', bondtype_freq = 3,
         except AttributeError:
             print('the {}th row has an error'.format(i))
             error_row.append(i)
+        except ValueError:
         except TypeError:
             print('the {}th row smile is: {}, can not convert to graph structure'.format(i, data[i][1]))
             error_row.append(i)
