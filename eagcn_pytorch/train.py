@@ -26,7 +26,7 @@ import matplotlib.pyplot as plt
 from time import gmtime, strftime
 
 # Training settings
-dataset = 'hiv'   # 'tox21', 'hiv'
+dataset = 'tox21'   # 'tox21', 'hiv'
 EAGCN_structure = 'concate' #  'concate', 'weighted_ave'
 write_file = True
 n_den1, n_den2= 64, 32
@@ -34,7 +34,7 @@ n_den1, n_den2= 64, 32
 if dataset == 'tox21':
     n_sgc1_1, n_sgc1_2, n_sgc1_3, n_sgc1_4, n_sgc1_5 = 30, 10, 10, 10, 10
     n_sgc2_1, n_sgc2_2, n_sgc2_3, n_sgc2_4, n_sgc2_5 = 60, 20, 20, 20, 20
-    batch_size = 256
+    batch_size = 4
     weight_decay = 0.0001  # L-2 Norm
     dropout  = 0.3
     random_state = 2
@@ -103,6 +103,8 @@ def test_model(loader, model, tasks):
 
     outputs = np.concatenate(outputs)
     labels_arr = np.concatenate(labels_arr)
+    outputs = outputs[labels_arr>-1]
+    labels_arr = labels_arr[labels_arr>-1]
 
     precision, recall, _ = precision_recall_curve(labels_arr, outputs)
     pr_auc = auc(recall, precision)
@@ -171,7 +173,8 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
                             ringAtt_batch)
             # weights = weight_func(BCE_weight, label_batch)
             # loss = nn.CrossEntropyLoss(weight=weights)(outputs, label_batch.squeeze(1).long())
-            loss = F.binary_cross_entropy_with_logits(outputs.view(-1), label_batch.float().view(-1))
+            loss = F.binary_cross_entropy_with_logits(outputs.view(-1), label_batch.float().view(-1))\
+                .mul((1 + label_batch.float().view(-1)).clamp(max=1)).mean()
             tot_loss += loss.cpu().item()
             loss.backward()
             optimizer.step()

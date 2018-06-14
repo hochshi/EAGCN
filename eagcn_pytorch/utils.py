@@ -243,6 +243,8 @@ def load_dc_tox21(path='../data/', dataset = 'tox21.csv', bondtype_freq =20, ato
             print('the {}th row has an error'.format(i))
         except TypeError:
             print('the {}th row smile is: {}, can not convert to graph structure'.format(i, smile))
+        except ValueError:
+            print('Mol {} couldn\'t be graphed'.format(smile))
         else:
             pass
     x_all = feature_normalize(x_all)
