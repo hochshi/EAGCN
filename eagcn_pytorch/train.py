@@ -12,13 +12,15 @@ from time import gmtime, strftime
 from tqdm import tqdm
 from tqdm import trange
 from scipy.stats import rankdata
-from sklearn.metrics import roc_auc_score, precision_recall_curve, auc, average_precision_score
+from sklearn.metrics import roc_auc_score, precision_recall_curve, auc, average_precision_score, mean_squared_error
 
 # Training settings
-dataset = 'hiv'  # 'tox21', 'hiv', 'pubchem_chembl', 'small_batch_test'
+reg=False
+dataset = 'esol'  # 'tox21', 'hiv', 'pubchem_chembl', 'small_batch_test'
 EAGCN_structure = 'concate'  # 'concate', 'weighted_ave'
 write_file = True
 n_den1, n_den2 = 64, 32
+batch_size = 256 if dataset == 'lipo' else 1024
 
 adj_pos, afm_pos, btf_pos, labels_pos = range(4)
 
@@ -94,6 +96,44 @@ if dataset == 'pubchem_chembl' or dataset == 'small_batch_test':
         if (1 == (0 != weight).long().sum().data[0]):
             return weight.float()/weight.sum()
         return (1 - weight.float()/weight.sum()).float()
+
+
+if dataset == 'lipo':
+    reg = True
+    all_tasks = ['MSE']
+    n_sgc1_1, n_sgc1_2, n_sgc1_3, n_sgc1_4, n_sgc1_5 = 30, 15, 15, 15, 15
+    n_sgc2_1, n_sgc2_2, n_sgc2_3, n_sgc2_4, n_sgc2_5 = 60, 30, 30, 30, 30
+    n_den1, n_den2, n_den3 = 64, 32, 12
+    early_stop_val_rmse = 0.50
+    learning_rate = 0.01  # 0.001
+    random_state = 1  # was 1
+    num_epochs = 500
+    dropout = 0.3
+    weight_decay = 0.0001  # 0.0001
+elif dataset == 'freesolv':
+    reg = True
+    all_tasks = ['MSE']
+    n_sgc1_1, n_sgc1_2, n_sgc1_3, n_sgc1_4, n_sgc1_5 = 30, 10, 5, 5, 5
+    n_sgc2_1, n_sgc2_2, n_sgc2_3, n_sgc2_4, n_sgc2_5 = 30, 10, 5, 5, 5
+    n_den1, n_den2, n_den3 = 32, 12, 12
+    early_stop_val_rmse = 0.70
+    random_state = 2
+    num_epochs = 1000
+    learning_rate = 0.001
+    dropout = 0.3
+    weight_decay = 0.0001
+elif dataset == 'esol':
+    reg = True
+    all_tasks = ['MSE']
+    n_sgc1_1, n_sgc1_2, n_sgc1_3, n_sgc1_4, n_sgc1_5 = 30, 10, 5, 5, 5
+    n_sgc2_1, n_sgc2_2, n_sgc2_3, n_sgc2_4, n_sgc2_5 = 30, 10, 5, 5, 5
+    n_den1, n_den2, n_den3 = 32, 12, 12
+    early_stop_val_rmse = 0.40
+    random_state = 2
+    num_epochs = 1000
+    learning_rate = 0.001
+    dropout = 0.3
+    weight_decay = 0.0001
 
 # Early Stopping:
 early_stop_step_single = 3
@@ -381,7 +421,27 @@ def test_sgn_model(model, train_loader, test_loader):
     return np.true_divide(correct, total).tolist()
 
 
-def test_wrapper(model, train_loader, validation_loader):
+def test_model_rmse(model, data_loader):
+    """
+    Help function that tests the model's performance on a dataset
+    @param: loader - data loader for the dataset to test against
+    """
+    model.eval()
+    process_bar = tqdm(data_loader)
+    outputs = []
+    labels = []
+    for mols in process_bar:
+        mols = mol_to_input_label(mols)
+        outputs.append(model(mols).view(-1).cpu().data.numpy())
+        labels.append(mols[-1].view(-1).cpu().data.numpy())
+    outputs = np.concatenate(outputs)
+    labels = np.concatenate(labels)
+
+    model.train()
+    return [np.sqrt(metrics.mean_squared_error(outputs, labels))]
+
+
+def test_wrapper(model, train_loader, validation_loader, test_func=test_model_auc):
     import signal
     import sys
 
@@ -391,7 +451,7 @@ def test_wrapper(model, train_loader, validation_loader):
     signal.signal(signal.SIGINT, signal_handler)
 
     tqdm.write("Testing Model:")
-    tqdm.write('Results: {}'.format(', '.join(map(str, test_model_auc(model, validation_loader)))))
+    tqdm.write('Results: {}'.format(', '.join(map(str, test_func(model, validation_loader)))))
 
 
 def mol_to_input(mol):
@@ -423,7 +483,8 @@ def simplify_input(x_all):
 def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
     x_all, y_all, target, sizes, mol_to_graph_transform, parameter_holder, edge_vocab, node_vocab = load_data(dataset)
     max_size = max(sizes)
-    x_all, y_all = data_filter(x_all, y_all, target, sizes, tasks)
+    if not reg:
+        x_all, y_all = data_filter(x_all, y_all, target, sizes, tasks)
     x_all, y_all = shuffle(x_all, y_all, random_state=random_state)
 
     if mol_to_graph_transform is None:
@@ -436,7 +497,12 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
 
     x_all, edge_to_ix, edge_word_len, node_to_ix, node_word_len = embed_data(x_all, edge_vocab, node_vocab)
 
-    model = SkipGramModel(15, edge_to_ix, edge_word_len, node_to_ix, node_word_len, 2, len(all_tasks))
+    if reg:
+        model = SkipGramModel(15, edge_to_ix, edge_word_len, node_to_ix, node_word_len, 2, 1)
+        criterion = torch.nn.MSELoss()
+    else:
+        model = SkipGramModel(15, edge_to_ix, edge_word_len, node_to_ix, node_word_len, 2, len(tasks))
+        criterion = lambda x, y: F.binary_cross_entropy_with_logits(x.view(-1), y.float().view(-1))
 
     print("model has {} parameters".format(count_parameters(model)))
     if use_cuda:
@@ -459,7 +525,7 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
 
     loss_hist = []
     process_bar0 = trange(num_epochs)
-    # test_wrapper(model, train_loader, validation_loader)
+    test_wrapper(model, train_loader, validation_loader, test_model_rmse)
     for epoch in process_bar0:
         tot_loss = 0
         model.train()
@@ -468,7 +534,8 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
             optimizer.zero_grad()
             mols = mol_to_input_label(mols)
             outputs = model(mols)
-            loss = F.binary_cross_entropy_with_logits(outputs.view(-1), mols[-1].float().view(-1))
+            # loss = F.binary_cross_entropy_with_logits(outputs.view(-1), mols[-1].float().view(-1))
+            loss = criterion(outputs, mols[-1].float())
             tot_loss += loss.cpu().item()
             loss.backward()
             optimizer.step()
@@ -481,140 +548,6 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
     tqdm.write('Loss history: {}'.format(', '.join(map(str, loss_hist))))
     test_wrapper(model, train_loader, validation_loader)
     test_wrapper(model, train_loader, test_loader)
-"""
-        if False:
-            if precision_recall:
-                print("Calculating train precision and recall...")
-                tpre, trec, tspe, tacc = test_model(train_loader, model, tasks)
-                print("Calculating validation precision and recall...")
-                vpre, vrec, vspe, vacc = test_model(validation_loader, model, tasks)
-                print(
-                    'Epoch: [{}/{}], '
-                    'Step: [{}/{}], '
-                    'Loss: {},'
-                    '\n'
-                    'Train: Precision: {}, Recall: {}, Specificity: {}, Accuracy: {}'
-                    '\n'
-                    'Validation: Precision: {}, Recall: {}, Specificity: {}, Accuracy: {}'.format(
-                        epoch + 1, num_epochs, i + 1,
-                        math.ceil(len_train / batch_size), tot_loss,
-                        tpre, trec, tspe, tacc,
-                        vpre, vrec, vspe, vacc
-                    ))
-            elif calcpos:
-                print("Calculating train pos...")
-                tpos_0, tpos_5, tpos_10, tpos_30 = 0, 0, 0, 0
-                if epoch > 1 and 0 == (epoch % 9):
-                    pos_data, train_fps, train_fp_labels = test_model(train_loader, model, tasks, reportFps=True)
-                    tpos_0, tpos_5, tpos_10, tpos_30 = pos_data
-                acc_history[:, 0, epoch] = [tpos_0, tpos_5, tpos_10, tpos_30]
-                print("Calculating validation pos...")
-                pos_data, val_fps, val_fp_labels = test_model(validation_loader, model, tasks, reportFps=True)
-                vpos_0, vpos_5, vpos_10, vpos_30 = pos_data
-                acc_history[:, 1, epoch] = [vpos_0, vpos_5, vpos_10, vpos_30]
-                print(
-                    'Epoch: [{}/{}], '
-                    'Step: [{}/{}], '
-                    'Loss: {},'
-                    '\n'
-                    'Train: 0: {}, 5: {}, 10: {}, 30: {}'
-                    '\n'
-                    'Validation: 0: {}, 5: {}, 10: {}, 30: {}'.format(
-                        epoch + 1, num_epochs, i + 1,
-                        math.ceil(len_train / batch_size), tot_loss,
-                        tpos_0, tpos_5, tpos_10, tpos_30,
-                        vpos_0, vpos_5, vpos_10, vpos_30
-                    ))
-            else:
-                print("Calculating train auc...")
-                train_acc_sep, train_acc_tot = test_model(train_loader, model, tasks)
-                print("Calculating validation auc...")
-                val_acc_sep, val_acc_tot = test_model(validation_loader, model, tasks)
-                print(
-                    'Epoch: [{}/{}], '
-                    'Step: [{}/{}], '
-                    'Loss: {}, \n'
-                    'Train AUC seperate: {}, \n'
-                    'Train AUC total: {}, \n'
-                    'Validation AUC seperate: {}, \n'
-                    'Validation AUC total: {} \n'.format(
-                        epoch + 1, num_epochs, i + 1,
-                        math.ceil(len_train / batch_size), tot_loss, \
-                        train_acc_sep, train_acc_tot, val_acc_sep,
-                        val_acc_tot))
-                if write_file:
-                    with open(file_name, 'a') as fp:
-                        fp.write(
-                            'Epoch: [{}/{}], '
-                            'Step: [{}/{}], '
-                            'Loss: {}, \n'
-                            'Train AUC seperate: {}, \n'
-                            'Train AUC total: {}, \n'
-                            'Validation AUC seperate: {}, \n'
-                            'Validation AUC total: {} \n'.format(
-                                epoch + 1, num_epochs, i + 1,
-                                math.ceil(len_train / batch_size),
-                                tot_loss, \
-                                train_acc_sep, train_acc_tot, val_acc_sep,
-                                val_acc_tot))
-                validation_acc_history.append(val_acc_tot)
-                # check if we need to earily stop the model
-                stop_training = earily_stop(validation_acc_history, tasks, early_stop_step_single,
-                                            early_stop_step_multi, early_stop_required_progress) and (
-                                train_acc_tot > 0.99)
-                if stop_training:  # early stopping
-                    print("{}th epoch: earily stop triggered".format(epoch))
-                    if write_file:
-                        with open(file_name, 'a') as fp:
-                            fp.write("{}th epoch: earily stop triggered".format(epoch))
-                    break
-
-        # because of the the nested loop
-        if stop_training:
-            break
-
-    if precision_recall:
-        print("Calculating train precision and recall...")
-        tpre, trec, tspe, tacc = test_model(test_loader, model, tasks)
-        print(
-            'Test Precision: {}, Recall: {}, Specificity: {}, Accuracy: {}'.format(tpre, trec, tspe, tacc)
-        )
-    elif calcpos:
-        pos_data, test_fps, test_fp_labels = test_model(test_loader, model, tasks, reportFps=True)
-        tpos_0, tpos_5, tpos_10, tpos_30 = pos_data
-        print(
-            'Test: 1: {}, 5: {}, 10: {}, 30: {}'.format(
-                tpos_0, tpos_5, tpos_10, tpos_30
-            ))
-        torch.save(model.state_dict(), '{}.pkl'.format(file_name))
-        torch.save(model, '{}.pt'.format(file_name))
-
-        if write_file:
-            with open(file_name, 'a') as fp:
-                fp.write('\n Test: 1: {}, 5: {}, 10: {}, 30: {}'.format(
-                tpos_0, tpos_5, tpos_10, tpos_30
-            ))
-            np.savez('{}_outputs'.format(file_name),
-                     test_fps=test_fps, test_fp_labels=test_fp_labels,
-                     train_fps=train_fps, train_fp_labels=train_fp_labels,
-                     val_fps=val_fps, val_fp_labels=val_fp_labels
-                     )
-            np.savez('{}_acc_history'.format(file_name), acc_history=acc_history)
-        return (tpos_0, tpos_5, tpos_10, tpos_30)
-    else:
-        test_auc_sep, test_auc_tot = test_model(test_loader, model, tasks)
-        torch.save(model.state_dict(), '{}.pkl'.format(file_name))
-        torch.save(model, '{}.pt'.format(file_name))
-
-        print('AUC of the model on the test set for single task: {}\n'
-              'AUC of the model on the test set for all tasks: {}'.format(test_auc_sep, test_auc_tot))
-        if write_file:
-            with open(file_name, 'a') as fp:
-                fp.write('AUC of the model on the test set for single task: {}\n'
-                         'AUC of the model on the test set for all tasks: {}'.format(test_auc_sep, test_auc_tot))
-
-        return (test_auc_tot)
-"""
 
 tasks = all_tasks  # [task]
 print(' learning_rate: {},\n batch_size: {}, \n '

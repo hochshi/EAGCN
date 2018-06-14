@@ -73,11 +73,11 @@ def load_data(dataset, path = '../data/'):
         elif dataset == 'hiv':
             x_all, y_all, target, sizes, edge_words, node_words = load_hiv(path=path, keep_nan=True)
         elif dataset == 'lipo':
-            x_all, y_all, target, sizes = load_lipo()
+            x_all, y_all, target, sizes, edge_words, node_words = load_lipo()
         elif dataset == 'freesolv':
-            x_all, y_all, target, sizes = load_freesolv()
+            x_all, y_all, target, sizes, edge_words, node_words = load_freesolv()
         elif dataset == 'esol':
-            x_all, y_all, target, sizes = load_esol()
+            x_all, y_all, target, sizes, edge_words, node_words = load_esol()
         elif dataset == 'pubchem_chembl':
             x_all, y_all, target, sizes, mol_to_graph_transform, parameter_holder, edge_words, node_words = load_pubchem(path=path, keep_nan=False)
 
@@ -265,17 +265,23 @@ def load_esol(path='../data/', dataset = 'delaney.csv', bondtype_freq = 3,
     x_all = []
     count_1 = 0
     count_2 = 0
+
+    edge_words = set()
+    node_words = set()
+
     for i in range(1, len(data)):
         mol = MolFromSmiles(data[i][-1])
         count_1 += 1
         try:
             (afm, adj, bft, adjTensor_OrderAtt,
-             adjTensor_AromAtt, adjTensor_ConjAtt, adjTensor_RingAtt) = molToGraph(mol, filted_bondtype_list_order,
+             adjTensor_AromAtt, adjTensor_ConjAtt, adjTensor_RingAtt, edge_word_set, node_word_set) = molToGraph(mol, filted_bondtype_list_order,
                                          filted_atomtype_list_order).dump_as_matrices_Att()
             mol_sizes.append(adj.shape[0])
             labels.append([np.float32(data[i][-2])])
             x_all.append([afm, adj, bft, adjTensor_OrderAtt, adjTensor_AromAtt, adjTensor_ConjAtt, adjTensor_RingAtt])
             count_2 +=1
+            edge_words = edge_words.union(edge_word_set)
+            node_words = node_words.union(node_word_set)
         except AttributeError:
             print('the {}th row has an error'.format(i))
             error_row.append(i)
@@ -288,8 +294,7 @@ def load_esol(path='../data/', dataset = 'delaney.csv', bondtype_freq = 3,
 
     x_all = feature_normalize(x_all)
     print('Done.')
-
-    return(x_all, labels, target, mol_sizes)
+    return (x_all, labels, target, mol_sizes, edge_words, node_words)
 
 def load_dc_tox21(path='../data/', dataset = 'tox21.csv', bondtype_freq =20, atomtype_freq =10, keep_nan=True):
     print('Loading {} dataset...'.format(dataset))
