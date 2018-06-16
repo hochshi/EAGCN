@@ -552,9 +552,9 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
             test_wrapper(model, train_loader, validation_loader)
         else:
             test_wrapper(model, train_loader, validation_loader, test_model_rmse)
-    tqdm.write('Loss history: {}'.format(', '.join(map(str, loss_hist))))
+    # tqdm.write('Loss history: {}'.format(', '.join(map(str, loss_hist))))
     tqdm.write('Validation history: {}'.format(', '.join(map(str, validation_hist))))
-    tqdm.write('Validation min: {}'.format(np.argmin(validation_hist)))
+    tqdm.write('Validation min: {}'.format(', '.join(map(str, np.argpartition(validation_hist, 20)))))
     test_wrapper(model, train_loader, validation_loader, test_model_rmse)
     test_wrapper(model, train_loader, test_loader, test_model_rmse)
 
