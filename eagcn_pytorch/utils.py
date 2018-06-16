@@ -129,21 +129,25 @@ def load_lipo(path='../data/', dataset = 'Lipophilicity.csv', bondtype_freq = 10
     x_all = []
     count_1 = 0
     count_2 = 0
+    edge_words = set()
+    node_words = set()
     for i in range(1, len(data)):
         mol = MolFromSmiles(data[i][2])
         count_1 += 1
         try:
             (afm, adj, bft, adjTensor_OrderAtt,
-             adjTensor_AromAtt, adjTensor_ConjAtt, adjTensor_RingAtt) = molToGraph(mol, filted_bondtype_list_order,
+             adjTensor_AromAtt, adjTensor_ConjAtt, adjTensor_RingAtt, edge_word_set, node_word_set) = molToGraph(mol, filted_bondtype_list_order,
                                                                                    filted_atomtype_list_order).dump_as_matrices_Att()
             mol_sizes.append(adj.shape[0])
             labels.append([np.float32(data[i][1])])
             x_all.append([afm, adj, bft, adjTensor_OrderAtt, adjTensor_AromAtt, adjTensor_ConjAtt, adjTensor_RingAtt])
             count_2 += 1
+            edge_words = edge_words.union(edge_word_set)
+            node_words = node_words.union(node_word_set)
         except AttributeError:
             print('the {}th row has an error'.format(i))
             error_row.append(i)
-        except TypeError:
+        except (TypeError, ValueError):
             print('the {}th row smile is: {}, can not convert to graph structure'.format(i, data[i][2]))
             error_row.append(i)
         else:
@@ -153,7 +157,7 @@ def load_lipo(path='../data/', dataset = 'Lipophilicity.csv', bondtype_freq = 10
     x_all = feature_normalize(x_all)
     print('Done.')
 
-    return(x_all, labels, target, mol_sizes)
+    return (x_all, labels, target, mol_sizes, edge_words, node_words)
 
 def load_freesolv(path='../data/', dataset = 'SAMPL.csv', bondtype_freq = 3,
                     atomtype_freq=3):
@@ -198,21 +202,27 @@ def load_freesolv(path='../data/', dataset = 'SAMPL.csv', bondtype_freq = 3,
     x_all = []
     count_1 = 0
     count_2 = 0
+
+    edge_words = set()
+    node_words = set()
+
     for i in range(1, len(data)):
         mol = MolFromSmiles(data[i][1])
         count_1 += 1
         try:
             (afm, adj, bft, adjTensor_OrderAtt,
-             adjTensor_AromAtt, adjTensor_ConjAtt, adjTensor_RingAtt) = molToGraph(mol, filted_bondtype_list_order,
+             adjTensor_AromAtt, adjTensor_ConjAtt, adjTensor_RingAtt, edge_word_set, node_word_set) = molToGraph(mol, filted_bondtype_list_order,
                                          filted_atomtype_list_order).dump_as_matrices_Att()
             mol_sizes.append(adj.shape[0])
             labels.append([np.float32(data[i][2])])
             x_all.append([afm, adj, bft, adjTensor_OrderAtt, adjTensor_AromAtt, adjTensor_ConjAtt, adjTensor_RingAtt])
             count_2 +=1
+            edge_words = edge_words.union(edge_word_set)
+            node_words = node_words.union(node_word_set)
         except AttributeError:
             print('the {}th row has an error'.format(i))
             error_row.append(i)
-        except TypeError:
+        except (TypeError, ValueError):
             print('the {}th row smile is: {}, can not convert to graph structure'.format(i, data[i][1]))
             error_row.append(i)
         i += 1
@@ -220,7 +230,7 @@ def load_freesolv(path='../data/', dataset = 'SAMPL.csv', bondtype_freq = 3,
     x_all = feature_normalize(x_all)
     print('Done.')
 
-    return(x_all, labels, target, mol_sizes)
+    return (x_all, labels, target, mol_sizes, edge_words, node_words)
 
 def load_esol(path='../data/', dataset = 'delaney.csv', bondtype_freq = 3,
                     atomtype_freq=3):

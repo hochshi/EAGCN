@@ -16,7 +16,8 @@ from sklearn.metrics import roc_auc_score, precision_recall_curve, auc, average_
 
 # Training settings
 reg=False
-dataset = 'esol'  # 'tox21', 'hiv', 'pubchem_chembl', 'small_batch_test'
+validation_hist = []
+dataset = 'freesolv'  # 'tox21', 'hiv', 'pubchem_chembl', 'small_batch_test'
 EAGCN_structure = 'concate'  # 'concate', 'weighted_ave'
 write_file = True
 n_den1, n_den2 = 64, 32
@@ -451,7 +452,9 @@ def test_wrapper(model, train_loader, validation_loader, test_func=test_model_au
     signal.signal(signal.SIGINT, signal_handler)
 
     tqdm.write("Testing Model:")
-    tqdm.write('Results: {}'.format(', '.join(map(str, test_func(model, validation_loader)))))
+    res = test_func(model, validation_loader)
+    validation_hist.append(res)
+    tqdm.write('Results: {}'.format(', '.join(map(str, res))))
 
 
 def mol_to_input(mol):
@@ -546,6 +549,7 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
         if epoch > 0 and 0 == epoch % 10:
             test_wrapper(model, train_loader, validation_loader)
     tqdm.write('Loss history: {}'.format(', '.join(map(str, loss_hist))))
+    tqdm.write('Validation history: {}'.format(', '.join(map(str, validation_hist))))
     test_wrapper(model, train_loader, validation_loader)
     test_wrapper(model, train_loader, test_loader)
 
