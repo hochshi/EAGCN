@@ -548,8 +548,10 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
         tqdm.write('Epoch: {}, Loss: {}'.format(epoch, tot_loss))
 
         # report performance
-        if epoch > 0 and 0 == epoch % 10:
+        if not reg:
             test_wrapper(model, train_loader, validation_loader)
+        else:
+            test_wrapper(model, train_loader, validation_loader, test_model_rmse)
     tqdm.write('Loss history: {}'.format(', '.join(map(str, loss_hist))))
     tqdm.write('Validation history: {}'.format(', '.join(map(str, validation_hist))))
     test_wrapper(model, train_loader, validation_loader)
