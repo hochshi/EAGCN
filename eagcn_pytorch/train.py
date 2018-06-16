@@ -510,6 +510,8 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
     print("model has {} parameters".format(count_parameters(model)))
     if use_cuda:
         model.cuda()
+        if reg:
+            criterion.cuda()
 
     model.apply(weights_init)
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
