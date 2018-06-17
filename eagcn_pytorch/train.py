@@ -191,24 +191,27 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
             optimizer.step()
 
         # report performance
-        if True:
-            # print("Calculating train precision and recall...")
-            # tpre, trec, tspe, tacc = test_model(train_loader, model, tasks)
-            print("Calculating validation precision and recall...")
-            vpre, vrec, vspe = test_model(validation_loader, model, tasks)
-            print(
-                'Epoch: [{}/{}], '
-                'Step: [{}/{}], '
-                'Loss: {},'
-                '\n'
-                # 'Train: Precision: {}, Recall: {}, fbeta_score: {}, Support: {}'
-                # '\n'
-                'Validation: ROC AUC: {}, P-R AUC: {}, PAS: {}'.format(
-                    epoch + 1, num_epochs, i + 1,
-                    math.ceil(len_train / batch_size), tot_loss,
-                    # tpre, trec, tspe, tacc,
-                    vpre, vrec, vspe
-                ))
+        # if True:
+        #     # print("Calculating train precision and recall...")
+        #     # tpre, trec, tspe, tacc = test_model(train_loader, model, tasks)
+        #     print("Calculating validation precision and recall...")
+        #     vpre, vrec, vspe = test_model(validation_loader, model, tasks)
+        #     print(
+        #         'Epoch: [{}/{}], '
+        #         'Step: [{}/{}], '
+        #         'Loss: {},'
+        #         '\n'
+        #         # 'Train: Precision: {}, Recall: {}, fbeta_score: {}, Support: {}'
+        #         # '\n'
+        #         'Validation: ROC AUC: {}, P-R AUC: {}, PAS: {}'.format(
+        #             epoch + 1, num_epochs, i + 1,
+        #             math.ceil(len_train / batch_size), tot_loss,
+        #             # tpre, trec, tspe, tacc,
+        #             vpre, vrec, vspe
+        #         ))
+
+    torch.save(model.state_dict(), '{}.pkl'.format(file_name))
+    torch.save(model, '{}.pt'.format(file_name))
 
     print("Calculating train precision and recall...")
     tpre, trec, tspe = test_model(test_loader, model, tasks)
