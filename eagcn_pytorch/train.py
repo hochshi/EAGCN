@@ -19,6 +19,7 @@ from sklearn.utils import shuffle, resample
 from sklearn.model_selection import train_test_split, KFold
 from sklearn.metrics import precision_recall_fscore_support
 from sklearn.metrics import roc_auc_score, precision_recall_curve, auc, average_precision_score
+import cPickle as pickle
 
 import os
 
@@ -218,6 +219,15 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
     print(
         'Test ROC AUC: {}, P-R AUC: {}, PAS: {}'.format(tpre, trec, tspe)
     )
+    model_params = {'n_bfeat': n_bfeat, 'n_afeat': 25, 'n_sgc1_1': n_sgc1_1, 'n_sgc1_2': n_sgc1_2, 'n_sgc1_3': n_sgc1_3,
+            'n_sgc1_4': n_sgc1_4,
+            'n_sgc1_5': n_sgc1_5,
+            'n_sgc2_1': n_sgc2_1, 'n_sgc2_2': n_sgc2_2, 'n_sgc2_3': n_sgc2_3, 'n_sgc2_4': n_sgc2_4,
+            'n_sgc2_5': n_sgc2_5,
+            'n_den1': n_den1, 'n_den2': n_den2,
+            'nclass': len(tasks), 'dropout': dropout}
+    pickle.dump(model_params, '{}_model_arguments'.format(file_name()))
+    
 
 tasks = all_tasks # [task]
 print(' learning_rate: {},\n batch_size: {}, \n '
