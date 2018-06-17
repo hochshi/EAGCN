@@ -214,11 +214,11 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
     torch.save(model.state_dict(), '{}.pkl'.format(file_name))
     torch.save(model, '{}.pt'.format(file_name))
 
-    print("Calculating train precision and recall...")
-    tpre, trec, tspe = test_model(test_loader, model, tasks)
-    print(
-        'Test ROC AUC: {}, P-R AUC: {}, PAS: {}'.format(tpre, trec, tspe)
-    )
+    # print("Calculating train precision and recall...")
+    # tpre, trec, tspe = test_model(test_loader, model, tasks)
+    # print(
+    #     'Test ROC AUC: {}, P-R AUC: {}, PAS: {}'.format(tpre, trec, tspe)
+    # )
     model_params = {'n_bfeat': n_bfeat, 'n_afeat': 25, 'n_sgc1_1': n_sgc1_1, 'n_sgc1_2': n_sgc1_2, 'n_sgc1_3': n_sgc1_3,
             'n_sgc1_4': n_sgc1_4,
             'n_sgc1_5': n_sgc1_5,
@@ -226,7 +226,8 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
             'n_sgc2_5': n_sgc2_5,
             'n_den1': n_den1, 'n_den2': n_den2,
             'nclass': len(tasks), 'dropout': dropout}
-    pickle.dump(model_params, '{}_model_arguments'.format(file_name()))
+    with open('{}_model_arguments'.format(file_name), 'wb') as fp:
+        pickle.dump(model_params, fp)
 
 
 tasks = all_tasks # [task]
