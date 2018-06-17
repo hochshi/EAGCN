@@ -277,11 +277,12 @@ class SkipGramMolEmbed(nn.Module):
                     .mul((1 - adjs).unsqueeze(1).clamp(min=0)).permute(0, 2, 3, 1).contiguous()
                 edge_data = edge_data.permute(0, 3, 1, 2).matmul(adjs_no_diag.unsqueeze(1))\
                     .mul((1 - adjs).unsqueeze(1).clamp(min=0)).permute(0, 2, 3, 1).contiguous()
-        return torch.cat([
-            torch.cat(out, dim=-1),
-            adjs_no_diag.sum(dim=-1).sum(dim=-1).unsqueeze(-1) / 2,
-            mols_sizes
-        ], dim=-1)
+        return torch.cat(out, dim=-1)
+        # return torch.cat([
+        #     torch.cat(out, dim=-1),
+        #     adjs_no_diag.sum(dim=-1).sum(dim=-1).unsqueeze(-1) / 2,
+        #     mols_sizes
+        # ], dim=-1)
 
 
     def forward3(self, adjs, afms, bfts):
@@ -343,8 +344,10 @@ class SkipGramModel(nn.Module):
         # self.loss = nn.BCEWithLogitsLoss()
         # self.bn = nn.BatchNorm1d(fp_len*(radius+1), affine=True)
         # self.classifier = nn.Linear(fp_len*(radius+1), nclass)
-        self.bn = nn.BatchNorm1d(fp_len*(radius+1)+2, affine=True)
-        self.classifier = nn.Linear(fp_len*(radius+1)+2, nclass)
+        # self.bn = nn.BatchNorm1d(fp_len*(radius+1)+2, affine=True)
+        # self.classifier = nn.Linear(fp_len*(radius+1)+2, nclass)
+        self.bn = nn.BatchNorm1d(fp_len * (radius + 1), affine=False)
+        self.classifier = nn.Linear(fp_len * (radius + 1), nclass)
         self.init_emb()
 
     def init_emb(self):
@@ -359,8 +362,8 @@ class SkipGramModel(nn.Module):
         self.w_embedding.bl2_edge.weight.data.uniform_(-initrange, initrange)
         self.w_embedding.bl2_node.weight.data.uniform_(-initrange, initrange)
 
-        self.bn.weight.data.normal_(1, initrange)
-        self.bn.bias.data.fill_(0)
+        # self.bn.weight.data.normal_(1, initrange)
+        # self.bn.bias.data.fill_(0)
 
         # self.w_embedding.edge_embeddings.weight.data.normal_(0, 0.05)
         # self.w_embedding.node_embeddings.weight.data.normal_(0, 0.05)
