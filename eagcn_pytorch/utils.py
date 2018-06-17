@@ -671,7 +671,10 @@ def set_weight(y_all):
                     neg_dic[j] += 1
 
     for key in pos_dic.keys():
-        weight_dic[key] = [5000/pos_dic[key], 5000/neg_dic[key]]
+        try:
+            weight_dic[key] = [5000/pos_dic[key], 5000/neg_dic[key]]
+        except KeyError:
+            weight_dic[key] = [5000 / pos_dic[key], 5000]
     return(weight_dic)
 
 def weights_init(m):
