@@ -120,7 +120,7 @@ elif dataset == 'freesolv':
     early_stop_val_rmse = 0.70
     random_state = 2
     num_epochs = 1000
-    learning_rate = 0.001
+    learning_rate = 0.0005
     dropout = 0.3
     weight_decay = 0.0001
 elif dataset == 'esol':
@@ -553,8 +553,9 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
         else:
             test_wrapper(model, train_loader, validation_loader, test_model_rmse)
     # tqdm.write('Loss history: {}'.format(', '.join(map(str, loss_hist))))
-    tqdm.write('Validation history: {}'.format(', '.join(map(str, validation_hist))))
+    # tqdm.write('Validation history: {}'.format(', '.join(map(str, validation_hist))))
     tqdm.write('Validation min: {}'.format(', '.join(map(str, np.argpartition(np.concatenate(validation_hist), 20)[:20]))))
+    tqdm.write('Validation min: {}'.format(', '.join(map(str, np.partition(np.concatenate(validation_hist), 20)[:20]))))
     test_wrapper(model, train_loader, validation_loader, test_model_rmse)
     test_wrapper(model, train_loader, test_loader, test_model_rmse)
 
