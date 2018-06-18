@@ -185,8 +185,9 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
                             ringAtt_batch)
             # weights = weight_func(BCE_weight, label_batch)
             # loss = nn.CrossEntropyLoss(weight=weights)(outputs, label_batch.squeeze(1).long())
-            loss = F.binary_cross_entropy_with_logits(outputs.view(-1), label_batch.float().view(-1))\
-                .mul((1 + label_batch.float().view(-1)).clamp(max=1)).mean()
+            # loss = F.binary_cross_entropy_with_logits(outputs.view(-1), label_batch.float().view(-1))\
+            #     .mul((1 + label_batch.float().view(-1)).clamp(max=1)).mean()
+            loss = F.cross_entropy(outputs, label_batch.float().max(dim=1)[1])
             tot_loss += loss.cpu().item()
             loss.backward()
             optimizer.step()
