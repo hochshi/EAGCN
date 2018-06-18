@@ -27,7 +27,7 @@ import matplotlib.pyplot as plt
 from time import gmtime, strftime
 
 # Training settings
-dataset = 'tox21'   # 'tox21', 'hiv'
+dataset = 'affinity'   # 'tox21', 'hiv'
 EAGCN_structure = 'concate' #  'concate', 'weighted_ave'
 write_file = True
 n_den1, n_den2= 64, 32
@@ -65,6 +65,7 @@ early_stop_step_single = 3
 early_stop_step_multi = 5
 early_stop_required_progress = 0.001
 early_stop_diff = 0.11
+np.random.seed(random_state)
 
 experiment_date = strftime("%b_%d_%H:%M", gmtime()) +'N'
 print(experiment_date)

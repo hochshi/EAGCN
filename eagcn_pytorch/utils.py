@@ -17,11 +17,19 @@ import operator
 from torch.autograd import Variable
 import torch.nn.functional as F
 
+import pandas as pd
+from scipy.spatial.distance import pdist, cdist, squareform
+from rdkit.Chem import AllChem
+from rdkit import DataStructs, Chem
+
 use_cuda = torch.cuda.is_available()
 FloatTensor = torch.cuda.FloatTensor if use_cuda else torch.FloatTensor
 LongTensor = torch.cuda.LongTensor if use_cuda else torch.LongTensor
 IntTensor = torch.cuda.IntTensor if use_cuda else torch.IntTensor
 DoubleTensor = torch.cuda.DoubleTensor if use_cuda else torch.DoubleTensor
+
+
+nBits = 16384
 
 if use_cuda:
     def from_numpy(x):
@@ -218,6 +226,10 @@ def load_affinity(path='../data/', dataset = 'small_batch_test.csv', bondtype_fr
     print('filted_atomtype_list_order: {}, \n filted_bondtype_list_order: {}'.format(filted_atomtype_list_order,
                                                                                      filted_bondtype_list_order))
 
+    df = pd.read_csv('{}{}'.format(path, dataset))
+    df.fillna(0, inplace=True)
+    data = [None] + filter_affinity_mols(df)
+
     # mol to graph
     i = 0
     mol_sizes = []
@@ -254,6 +266,51 @@ def load_affinity(path='../data/', dataset = 'small_batch_test.csv', bondtype_fr
     x_all = feature_normalize(x_all)
     print('Done.')
     return (x_all, y_all, target, mol_sizes)
+
+
+def convert_inchi_fp(mol_list, fp_len=nBits):
+    fps, good_mols = list(), list()
+    for molt in mol_list:
+        mol = Chem.inchi.MolFromInchi(molt)
+        if mol is not None:
+            fps.append(AllChem.GetMorganFingerprintAsBitVect(mol, 2, nBits=fp_len))
+            good_mols.append(molt)
+    np_fps = []
+    for fp in fps:
+      l_arr = np.zeros((1,), dtype=np.int8)
+      DataStructs.ConvertToNumpyArray(fp, l_arr)
+      np_fps.append(l_arr)
+
+    np_fps = np.concatenate(np_fps, axis=0)
+    np_fps = np_fps.reshape(-1, fp_len)
+    return np_fps, good_mols
+
+
+def filter_affinity_mols(df, cutoff=0.6):
+    targets = df.columns[:-1]
+    filtered_mols = []
+    for i, target in enumerate(targets):
+        fps, mols = convert_inchi_fp(df['InChI'][df[target] == 1].values)
+        dist_mat = squareform(pdist(fps, metric='jaccard'))
+
+        target_filtered_mols = []
+
+        while not np.all(dist_mat <= cutoff):
+            mol_pos = np.random.choice(np.ravel_multi_index(np.nonzero(dist_mat > cutoff), dist_mat.shape), 1)
+            mol_pos = np.unravel_index(mol_pos, dist_mat.shape)
+            mol_pos = int(mol_pos[0])
+            dist_mat[np.nonzero(dist_mat[mol_pos,:] <= 0.6)[0], :] = 0
+            dist_mat[mol_pos, :] = 0
+            label = [0] * len(targets)
+            label[i] = 1.
+            target_filtered_mols.append(label + [mols[mol_pos]])
+
+        filtered_mols.extend(target_filtered_mols)
+    return filtered_mols
+
+
+
+
 
 def load_dc_tox21(path='../data/', dataset = 'tox21.csv', bondtype_freq =20, atomtype_freq =10, keep_nan=True):
     print('Loading {} dataset...'.format(dataset))
