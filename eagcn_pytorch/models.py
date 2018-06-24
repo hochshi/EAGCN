@@ -27,6 +27,8 @@ class Concate_GCN(nn.Module):
                  nclass, dropout, use_att = True, molfp_mode = 'sum'):
         super(Concate_GCN, self).__init__()
 
+        self.nclass = nclass
+
         self.ngc1 = n_sgc1_1 + n_sgc1_2 + n_sgc1_3 + n_sgc1_4 + n_sgc1_5
         ngc1 = self.ngc1
         self.ngc2 = n_sgc2_1 + n_sgc2_2 + n_sgc2_3 + n_sgc2_4 + n_sgc2_5

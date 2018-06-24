@@ -226,9 +226,9 @@ def load_affinity(path='../data/', dataset = 'small_batch_test.csv', bondtype_fr
     print('filted_atomtype_list_order: {}, \n filted_bondtype_list_order: {}'.format(filted_atomtype_list_order,
                                                                                      filted_bondtype_list_order))
 
-    df = pd.read_csv('{}{}'.format(path, dataset))
-    df.fillna(0, inplace=True)
-    data = [None] + filter_affinity_mols(df)
+    # df = pd.read_csv('{}{}'.format(path, dataset))
+    # df.fillna(0, inplace=True)
+    # data = [None] + filter_affinity_mols(df)
 
     # mol to graph
     i = 0
@@ -243,7 +243,7 @@ def load_affinity(path='../data/', dataset = 'small_batch_test.csv', bondtype_fr
         label = row[0:-1]
         label = ['nan' if ele == '' else ele for ele in label]
         num_label = [float(x) for x in label]
-        num_label = [-1 if math.isnan(x) else x for x in num_label]
+        num_label = [0 if math.isnan(x) else x for x in num_label]
 
         idx = i + 1
         i = i + 1
@@ -728,10 +728,11 @@ def set_weight(y_all):
                     neg_dic[j] += 1
 
     for key in pos_dic.keys():
-        try:
-            weight_dic[key] = [5000/pos_dic[key], 5000/neg_dic[key]]
-        except KeyError:
-            weight_dic[key] = [5000 / pos_dic[key], 5000]
+        weight_dic[key] = [(neg_dic[0]+pos_dic[0])/(neg_dic[0] + 1e-6), (neg_dic[0]+pos_dic[0])/(pos_dic[0] + 1e-6)]
+        # try:
+        #     weight_dic[key] = [5000/pos_dic[key], 5000/neg_dic[key]]
+        # except KeyError:
+        #     weight_dic[key] = [5000 / pos_dic[key], 5000]
     return(weight_dic)
 
 def weights_init(m):
