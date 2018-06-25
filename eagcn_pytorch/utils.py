@@ -726,14 +726,16 @@ def set_weight(y_all):
                     neg_dic[j] = 1
                 else:
                     neg_dic[j] += 1
-
-    for key in pos_dic.keys():
-        weight_dic[key] = [(neg_dic[0]+pos_dic[0])/(neg_dic[0] + 1e-6), (neg_dic[0]+pos_dic[0])/(pos_dic[0] + 1e-6)]
-        # try:
-        #     weight_dic[key] = [5000/pos_dic[key], 5000/neg_dic[key]]
-        # except KeyError:
-        #     weight_dic[key] = [5000 / pos_dic[key], 5000]
-    return(weight_dic)
+    return max(pos_dic.values())/np.array(pos_dic.values(), dtype=np.float)
+    # tot_sum = float(sum(pos_dic.values()))
+    # for key in pos_dic.keys():
+    #     weight_dic[key] = tot_sum/(tot_sum - pos_dic[key])
+    #     # weight_dic[key] = [(neg_dic[0]+pos_dic[0])/(neg_dic[0] + 1e-6), (neg_dic[0]+pos_dic[0])/(pos_dic[0] + 1e-6)]
+    #     # try:
+    #     #     weight_dic[key] = [5000/pos_dic[key], 5000/neg_dic[key]]
+    #     # except KeyError:
+    #     #     weight_dic[key] = [5000 / pos_dic[key], 5000]
+    # return weight_dic
 
 def weights_init(m):
     classname = m.__class__.__name__
