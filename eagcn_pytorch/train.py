@@ -20,6 +20,7 @@ from sklearn.model_selection import train_test_split, KFold
 from sklearn.metrics import precision_recall_fscore_support
 from sklearn.metrics import roc_auc_score, precision_recall_curve, auc, average_precision_score
 from sklearn.metrics import precision_score, recall_score, accuracy_score
+from sklearn.preprocessing import label_binarize
 import cPickle as pickle
 
 import os
@@ -54,7 +55,7 @@ if dataset == 'hiv':
 if dataset == 'affinity':
     n_sgc1_1, n_sgc1_2, n_sgc1_3, n_sgc1_4, n_sgc1_5 = 30, 10, 10, 10, 10
     n_sgc2_1, n_sgc2_2, n_sgc2_3, n_sgc2_4, n_sgc2_5 = 60, 20, 20, 20, 20
-    batch_size = 1024
+    batch_size = 4
     weight_decay = 0.0001  # L-2 Norm
     dropout  = 0.3
     random_state = 2
@@ -112,9 +113,10 @@ def test_model(loader, model, tasks):
         orderAtt_batch, aromAtt_batch, conjAtt_batch, ringAtt_batch = Variable(orderAtt), Variable(aromAtt), Variable(
             conjAtt), Variable(ringAtt)
         outputs = model(adj_batch, afm_batch, btf_batch, orderAtt_batch, aromAtt_batch, conjAtt_batch, ringAtt_batch)
+        # pred_labels.append(label_binarize(F.log_softmax(outputs, dim=1).max(dim=1)[1].cpu().data.numpy(), classes=range(len(all_tasks))))
         pred_labels.append(F.log_softmax(outputs, dim=1).max(dim=1)[1].cpu().data.numpy())
         # outputs.append(model(adj_batch, afm_batch, btf_batch, orderAtt_batch, aromAtt_batch, conjAtt_batch, ringAtt_batch).cpu().data.numpy())
-        labels_arr.append(label_batch.squeeze(1).long().cpu().data.numpy())
+        labels_arr.append(label_batch.squeeze(1).long().max(dim=1)[1].cpu().data.numpy())
 
     # outputs = np.concatenate(outputs)
     pred_labels = np.concatenate(pred_labels)
@@ -129,12 +131,23 @@ def test_model(loader, model, tasks):
 
     model.train()
 
+    pre, recall, fscore, _ = metrics.precision_recall_fscore_support(labels_arr, pred_labels, average='macro')
+    acc = metrics.accuracy_score(labels_arr, pred_labels)
+
+    return pre, recall, fscore, acc
+
+    # return (precision_score(labels_arr, pred_labels, average='samples'),
+    #         recall_score(labels_arr, pred_labels, average='samples'),
+    #         accuracy_score(labels_arr, pred_labels),
+    #         average_precision_score(labels_arr, pred_labels, average='samples'),
+    #         roc_auc_score(labels_arr, pred_labels, average='samples'))
+
     # return [roc_auc, pr_auc, aps]
     # return precision_recall_fscore_support(np.concatenate(true_labels), np.concatenate(pred_labels), average='binary')
-    return (precision_score(labels_arr, pred_labels, average='binary'),
-            recall_score(labels_arr, pred_labels, average='binary'),
-            accuracy_score(labels_arr, pred_labels),
-            average_precision_score(labels_arr, pred_labels, average=None))
+    # return (precision_score(labels_arr, pred_labels, average='micro'),
+    #         recall_score(labels_arr, pred_labels, average='micro'),
+    #         accuracy_score(labels_arr, pred_labels),
+    #         average_precision_score(labels_arr, pred_labels, average='micro'))
 
 def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
     x_all, y_all, target, sizes = load_data(dataset)
@@ -190,6 +203,8 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
     len_train = len(x_train)
     del x_train, y_train, x_val, y_val
 
+    test_model(validation_loader, model, tasks)
+
     for epoch in range(num_epochs):
         tot_loss = 0
         for i, (adj, afm, btf, orderAtt, aromAtt, conjAtt, ringAtt, labels) in enumerate(train_loader):
@@ -213,30 +228,30 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
         # report performance
         if True:
             print("Calculating train precision and recall...")
-            tpre, trec, tacc, taps = test_model(train_loader, model, tasks)
+            tpre, trec, tf, tacc = test_model(train_loader, model, tasks)
             print("Calculating validation precision and recall...")
-            vpre, vrec, vacc, vaps = test_model(validation_loader, model, tasks)
+            vpre, vrec, vf, vacc = test_model(validation_loader, model, tasks)
             print(
                 'Epoch: [{}/{}], '
                 'Step: [{}/{}], '
                 'Loss: {},'
                 '\n'
-                'Train: Precision: {}, Recall: {}, Accuracy: {}, APS: {}'
+                'Train: Precision: {}, Recall: {}, F-Score: {} Accuracy: {}'
                 '\n'
-                'Validation: Precision: {}, Recall: {}, Accuracy: {}, APS: {}'.format(
+                'Validation: Precision: {}, Recall: {}, F-Score: {} Accuracy: {}'.format(
                     epoch + 1, num_epochs, i + 1,
                     math.ceil(len_train / batch_size), tot_loss,
-                    tpre, trec, tacc, taps,
-                    vpre, vrec, vacc, vaps
+                    tpre, trec, tf, tacc,
+                    vpre, vrec, vf, vacc
                 ))
 
     torch.save(model.state_dict(), '{}.pkl'.format(file_name))
     torch.save(model, '{}.pt'.format(file_name))
 
     # print("Calculating train precision and recall...")
-    tpre, trec, tacc, taps = test_model(test_loader, model, tasks)
+    tpre, trec, tf, tacc = test_model(test_loader, model, tasks)
     print(
-        'Test Precision: {}, Recall: {}, Accuracy: {}, APS: {}'.format(tpre, trec, tacc, taps)
+        'Test Precision: {}, Recall: {}, F-Score: {} Accuracy: {}'.format(tpre, trec, tf, tacc)
     )
     model_params = {'n_bfeat': n_bfeat, 'n_afeat': 25, 'n_sgc1_1': n_sgc1_1, 'n_sgc1_2': n_sgc1_2, 'n_sgc1_3': n_sgc1_3,
             'n_sgc1_4': n_sgc1_4,
