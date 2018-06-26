@@ -220,7 +220,7 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
             # loss = F.binary_cross_entropy_with_logits(outputs.view(-1), label_batch.float().view(-1))\
             #     .mul((1 + label_batch.float().view(-1)).clamp(max=1)).mean()
             # loss = F.cross_entropy(outputs, label_batch.float().max(dim=1)[1])
-            loss = F.cross_entropy(outputs, label_batch.long().max(dim=1)[0], weight=BCE_weight)
+            loss = F.cross_entropy(outputs, label_batch.long().max(dim=1)[1], weight=BCE_weight)
             tot_loss += loss.cpu().item()
             loss.backward()
             optimizer.step()
