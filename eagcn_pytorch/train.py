@@ -10,6 +10,7 @@ import torch
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.autograd import Variable
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 from utils import *
 from models import *
 from torch.utils.data import Dataset
@@ -191,6 +192,7 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
 
     model.apply(weights_init)
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
+    scheduler = ReduceLROnPlateau(optimizer, 'max', factor=0.5, verbose=True)
 
     validation_acc_history = []
     stop_training = False
@@ -244,6 +246,7 @@ def train(tasks, EAGCN_structure, n_den1, n_den2, file_name):
                     tpre, trec, tf, tacc,
                     vpre, vrec, vf, vacc
                 ))
+        scheduler.step(vacc)
 
     torch.save(model.state_dict(), '{}.pkl'.format(file_name))
     torch.save(model, '{}.pt'.format(file_name))
