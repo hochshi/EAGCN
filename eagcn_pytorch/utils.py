@@ -22,6 +22,8 @@ from scipy.spatial.distance import pdist, cdist, squareform
 from rdkit.Chem import AllChem
 from rdkit import DataStructs, Chem
 
+from sklearn import preprocessing
+
 use_cuda = torch.cuda.is_available()
 FloatTensor = torch.cuda.FloatTensor if use_cuda else torch.FloatTensor
 LongTensor = torch.cuda.LongTensor if use_cuda else torch.LongTensor
@@ -38,17 +40,18 @@ else:
     def from_numpy(x):
         return torch.from_numpy(x)
 
-def load_data(dataset, path = '../data/'):
+
+def load_data(dataset, file_name, dataset_file_format, path = '../data/'):
     if dataset == 'tox21':
-        x_all, y_all, target, sizes = load_dc_tox21(path=path, keep_nan=True)
+        x_all, y_all, target, sizes = load_dc_tox21(path=path, keep_nan=True, dataset=file_name)
     elif dataset == 'hiv':
-        x_all, y_all, target, sizes = load_hiv(path=path, keep_nan=True)
+        x_all, y_all, target, sizes = load_hiv(path=path, keep_nan=True, dataset=file_name)
     elif dataset == 'lipo':
         x_all, y_all, target, sizes = load_lipo()
     elif dataset == 'freesolv':
         x_all, y_all, target, sizes = load_freesolv()
     elif dataset == 'affinity':
-        x_all, y_all, target, sizes = load_affinity(path=path, keep_nan=True)
+        x_all, y_all, target, sizes = load_affinity(path=path, keep_nan=True, dataset=file_name, dataset_file_format=dataset_file_format)
     return(x_all, y_all, target, sizes)
 
 
@@ -188,18 +191,30 @@ def load_freesolv(path='../data/', dataset = 'SAMPL.csv', bondtype_freq = 3,
 
     return(x_all, labels, target, mol_sizes)
 
-def load_affinity(path='../data/', dataset = 'small_batch_test.csv', bondtype_freq =20, atomtype_freq =10, keep_nan=True):
+def load_affinity(path='../data/', dataset = 'small_batch_test.csv', bondtype_freq =20, atomtype_freq =10,
+                  keep_nan=True, dataset_file_format=False):
+
+    def mol2graph(smile):
+        try:
+            mol = Chem.MolFromInchi(smile)
+            (afm, adj, bft, adjTensor_OrderAtt, adjTensor_AromAtt, adjTensor_ConjAtt, adjTensor_RingAtt) = \
+                molToGraph(mol, filted_bondtype_list_order, filted_atomtype_list_order).dump_as_matrices_Att()
+            return [afm, adj, bft, adjTensor_OrderAtt, adjTensor_AromAtt, adjTensor_ConjAtt, adjTensor_RingAtt], adj.shape[0]
+        except AttributeError:
+            print('the {}th row has an error'.format(i))
+        except TypeError:
+            print('the {}th row smile is: {}, can not convert to graph structure'.format(i, smile))
+        except ValueError:
+            print('Mol {} couldn\'t be graphed'.format(smile))
+        return None, None
+
     print('Loading {} dataset...'.format(dataset))
-    data = []
-    with open('{}{}'.format(path, dataset), 'r') as data_fid:
-        reader = csv.reader(data_fid, delimiter=',', quotechar='"')
-        for row in reader:
-            data.append(row)
+    mol_col = 'InChI'
+    target_col = 'target'
+    lb = preprocessing.LabelBinarizer()
+    df = pd.read_csv('{}{}'.format(path, dataset), index_col=None)
 
-    label_name = data[0][0:-1]
-    target = label_name
-
-    bondtype_dic, atomtype_dic = got_all_Type_solu_dic(dataset)
+    bondtype_dic, atomtype_dic = got_all_Type_solu_dic(df, mol_col=mol_col, smile=False)
 
     sorted_bondtype_dic = sorted(bondtype_dic.items(), key=operator.itemgetter(1))
     sorted_bondtype_dic.reverse()
@@ -225,10 +240,8 @@ def load_affinity(path='../data/', dataset = 'small_batch_test.csv', bondtype_fr
 
     print('filted_atomtype_list_order: {}, \n filted_bondtype_list_order: {}'.format(filted_atomtype_list_order,
                                                                                      filted_bondtype_list_order))
-
-    # df = pd.read_csv('{}{}'.format(path, dataset))
-    # df.fillna(0, inplace=True)
-    # data = [None] + filter_affinity_mols(df)
+    lb.fit(df[target_col].values)
+    target = lb.classes_
 
     # mol to graph
     i = 0
@@ -236,36 +249,15 @@ def load_affinity(path='../data/', dataset = 'small_batch_test.csv', bondtype_fr
     x_all = []
     y_all = []
     print('Transfer mol to matrices')
-    for row in data[1:]:
-        smile = row[-1]
-        mol = Chem.MolFromInchi(smile)
 
-        label = row[0:-1]
-        label = ['nan' if ele == '' else ele for ele in label]
-        num_label = [float(x) for x in label]
-        num_label = [0 if math.isnan(x) else x for x in num_label]
+    res = df.apply(lambda x: pd.Series(
+        list(mol2graph(x[mol_col])) + [lb.transform([x[target_col]]).reshape(-1)],
+        index=['graph', 'mol_size', 'target_label']
+    ), axis=1)
 
-        idx = i + 1
-        i = i + 1
-        try:
-            (afm, adj, bft, adjTensor_OrderAtt,
-             adjTensor_AromAtt, adjTensor_ConjAtt, adjTensor_RingAtt) = molToGraph(mol, filted_bondtype_list_order,
-                                                                                   filted_atomtype_list_order).dump_as_matrices_Att()
-            x_all.append([afm, adj, bft, adjTensor_OrderAtt, adjTensor_AromAtt, adjTensor_ConjAtt, adjTensor_RingAtt])
-            y_all.append(num_label)
-            mol_sizes.append(adj.shape[0])
-            # feature matrices of mols, include Adj Matrix, Atom Feature, Bond Feature.
-        except AttributeError:
-            print('the {}th row has an error'.format(i))
-        except TypeError:
-            print('the {}th row smile is: {}, can not convert to graph structure'.format(i, smile))
-        except ValueError:
-            print('Mol {} couldn\'t be graphed'.format(smile))
-        else:
-            pass
-    x_all = feature_normalize(x_all)
-    print('Done.')
-    return (x_all, y_all, target, mol_sizes)
+    res.dropna(inplace=True)
+
+    return feature_normalize(res.graph.values), np.vstack(res.target_label.values), target, res.mol_size.values
 
 
 def convert_inchi_fp(mol_list, fp_len=nBits):
@@ -839,47 +831,18 @@ def got_all_atomType_tox21_dic(dataset, path='../data/'):
             pass
     return(atomtype_dic)
 
-def got_all_Type_solu_dic(dataset, path='../data/'):
-    if dataset == 'Lipophilicity.csv':
-        delimiter = ','
-        quotechar = '"'
-        smile_idx = 2
-        len_data = 4201
-    elif dataset =='HIV.csv':
-        delimiter = ','
-        quotechar = '"'
-        smile_idx = 0
-        len_data = 82255
-    elif dataset == 'SAMPL.csv':
-        delimiter = ','
-        quotechar = '"'
-        smile_idx = 1
-        len_data = 643
-    elif dataset == 'tox21.csv':
-        delimiter = ','
-        quotechar = '"'
-        smile_idx = 13
-        len_data = 7832
-    elif dataset == 'small_batch_test.csv':
-        delimiter = ','
-        quotechar = '"'
-        smile_idx = -1
-        len_data = 28871
 
-    data = []
-    with open('{}{}'.format(path, dataset), 'r') as data_fid:
-        reader = csv.reader(data_fid, delimiter=delimiter, quotechar=quotechar)
-        for row in reader:
-            data.append(row)
+def got_all_Type_solu_dic(df, mol_col, smile=True):
+    if smile:
+        txt2mol = MolFromSmiles
+    else:
+        txt2mol = Chem.MolFromInchi
 
     bondtype_dic = {}
     atomtype_dic = {}
-    for row in data[1:]:  # Wierd, the len(data) is longer, but no data was in the rest of part.
-        if len(row) == 0:
-            continue
-        smile = row[smile_idx]
+    for smile in df[mol_col].values:
         try:
-            mol = Chem.MolFromInchi(smile)
+            mol = txt2mol(smile)
             bondtype_dic = fillBondType_dic(mol, bondtype_dic)
             atomtype_dic = fillAtomType_dic(mol, atomtype_dic)
         except AttributeError:
